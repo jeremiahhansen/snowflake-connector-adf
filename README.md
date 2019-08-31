@@ -40,7 +40,29 @@ Please complete the steps outlined in the **Prerequisites** section first and th
    1. Click on "Save" to save the new Access Policy (**important**)
 1. Create a Key Vault Access Policy for the Azure Data Factory
    1. Follow the steps above except this time for the *Select principal* step enter the name of the Azure Data Factory you created (the name will be the *Resource Name Prefix* you select earlier + "adf")
-
+1. Update the `snowflakeConnectionString` Function App setting with Key Vault secret version number (**note**: this is a temporary workaround until Azure Key Vault integration with Azure Functions is GA)
+   1. Open the Key Vault resource that was created
+   1. Click on the "Secrets" link in the Key Vault left nav bar and then click on the "snowflakeConnectionString" secret
+   1. Copy the "CURRENT VERSION" ID and save it for later
+   1. Open the Function App resource that was created
+   1. Click on the "Platform features" link and then on "Configuration"
+   1. Edit the "snowflakeConnectionString" setting and replace the `VERSION` string with the "CURRENT VERSION" ID from earlier
+   1. Click "Save" (**important**)
+1. Upload the stored procedure scripts to the new storage account
+   1. Connect to the new storage account either through the [Azure Portal UI](https://portal.azure.com) or the [Azure Storage Explorer](https://azure.microsoft.com/en-us/features/storage-explorer/)
+   1. Create the following folder structure in the "storedprocedures" container: `MyDatabase\MySchema`
+   1. Upload the `\Docs\MyStoredProcedure.sql` file in this repo to that new folder
+1. Deploy the Azure Function code to the new Function App
+   1. Open the solution in Visual Studio Code (VS Code)
+   1. Click on the "Azure" icon in the left nav bar
+   1. Click on the "Deploy to Function App..." (up arrow) icon in the Azure Function pane
+   1. Select your new Function App from the list and click "Deploy"
+1. Run the sample Azure Data Factory (ADF) pipeline
+   1. Open the Azure Data Factory resource that was created
+   1. Click on the "Author & Monitor" icon
+   1. Click on the "Author" (pencil) icon in the left navbar
+   1. Click on the "SampleSnowflakePipeline_P" pipeline in the Factory Resources section
+   1. Click on the "Debug" link and then "Finish" to execute the pipeline
 
 ## Creating Stored Procedure Scripts
 TODO: Add details here
