@@ -1,0 +1,331 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "resourceNamePrefix": {
+            "type": "string"
+        },
+        "keyVaultOwnerObjectId": {
+            "type": "string"
+        },
+        "snowflakeConnectionString": {
+            "type": "securestring"
+        }
+    },
+    "variables": {
+        "keyVaultName": "[concat(parameters('resourceNamePrefix'), 'kv')]",
+        "storageAccountName": "[concat(parameters('resourceNamePrefix'), 'sa')]",
+        "appServicePlanName": "[concat(parameters('resourceNamePrefix'), 'asp')]",
+        "functionAppName": "[concat(parameters('resourceNamePrefix'), 'fa')]",
+        "dataFactoryName": "[concat(parameters('resourceNamePrefix'), 'adf')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.KeyVault/vaults",
+            "apiVersion": "2016-10-01",
+            "name": "[variables('keyVaultName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "sku": {
+                    "family": "A",
+                    "name": "Standard"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "accessPolicies": [
+                    {
+                        "tenantId": "[subscription().tenantId]",
+                        "objectId": "[parameters('keyVaultOwnerObjectId')]",
+                        "permissions": {
+                            "keys": [],
+                            "secrets": [
+                                "Get",
+                                "List"
+                            ],
+                            "certificates": []
+                        }
+                    }
+                ],
+                "enabledForDeployment": false,
+                "enabledForDiskEncryption": false,
+                "enabledForTemplateDeployment": false
+            }
+        },
+        {
+            "type": "Microsoft.KeyVault/vaults/secrets",
+            "apiVersion": "2018-02-14",
+            "name": "[concat(variables('keyVaultName'), '/snowflakeConnectionString')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "value": "[parameters('snowflakeConnectionString')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts",
+            "apiVersion": "2019-04-01",
+            "name": "[variables('storageAccountName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard_LRS",
+                "tier": "Standard"
+            },
+            "kind": "StorageV2",
+            "properties": {
+                "networkAcls": {
+                    "bypass": "AzureServices",
+                    "virtualNetworkRules": [],
+                    "ipRules": [],
+                    "defaultAction": "Allow"
+                },
+                "supportsHttpsTrafficOnly": true,
+                "encryption": {
+                    "services": {
+                        "file": {
+                            "enabled": true
+                        },
+                        "blob": {
+                            "enabled": true
+                        }
+                    },
+                    "keySource": "Microsoft.Storage"
+                },
+                "accessTier": "Hot"
+            }
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+            "apiVersion": "2019-04-01",
+            "name": "[concat(variables('storageAccountName'), '/default/storedprocedures')]",
+            "properties": {
+                "publicAccess": "None"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Web/serverfarms",
+            "apiVersion": "2016-09-01",
+            "name": "[variables('appServicePlanName')]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Y1",
+                "tier": "Dynamic",
+                "size": "Y1",
+                "family": "Y",
+                "capacity": 0
+            },
+            "kind": "functionapp",
+            "properties": {
+                "name": "[variables('appServicePlanName')]",
+                "perSiteScaling": false,
+                "reserved": false,
+                "targetWorkerCount": 0,
+                "targetWorkerSizeId": 0
+            }
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2016-08-01",
+            "name": "[variables('functionAppName')]",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {
+                "name": "[variables('functionAppName')]",
+                "clientAffinityEnabled": false,
+                "reserved": false,
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageAccountName'),';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+                        },
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~2"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "dotnet"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageAccountName'),';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+                        },
+                        {
+                            "name": "WEBSITE_CONTENTSHARE",
+                            "value": "[toLower(variables('functionAppName'))]"
+                        },
+                        {
+                            "name": "WEBSITE_NODE_DEFAULT_VERSION",
+                            "value": "10.14.1"
+                        },
+                        {
+                            "name": "storageAccountConnectionString",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageAccountName'),';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+                        },
+                        {
+                            "name": "storageAccountContainerName",
+                            "value": "storedprocedures"
+                        },
+                        {
+                            "name": "snowflakeConnectionString",
+                            "value": "[concat('@Microsoft.KeyVault(SecretUri=https://',variables('keyVaultName'),'.vault.azure.net/secrets/snowflakeConnectionString/VERSION)')]"
+                        }
+                    ]
+                }
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.KeyVault/vaults/secrets",
+            "apiVersion": "2018-02-14",
+            "name": "[concat(variables('keyVaultName'), '/functionAppHostKey')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "value": "[listkeys(concat(resourceGroup().id,'/providers/Microsoft.Web/sites/', variables('functionAppName'), '/host/default/'),'2016-08-01').functionKeys.default]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+                "[variables('functionAppName')]"
+            ]
+        },
+        {
+            "type": "Microsoft.DataFactory/factories",
+            "apiVersion": "2018-06-01",
+            "name": "[variables('dataFactoryName')]",
+            "location": "[resourceGroup().location]",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "properties": {}
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "name": "[concat(variables('dataFactoryName'), '/KeyVault_LS')]",
+            "properties": {
+                "annotations": [],
+                "type": "AzureKeyVault",
+                "typeProperties": {
+                    "baseUrl": "[concat('https://', variables('keyVaultName'), '.vault.azure.net/')]"
+                }
+            },
+            "dependsOn": [
+                "[variables('dataFactoryName')]"
+            ]
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "name": "[concat(variables('dataFactoryName'), '/FunctionApp_LS')]",
+            "properties": {
+                "annotations": [],
+                "type": "AzureFunction",
+                "typeProperties": {
+                    "functionAppUrl": "[concat('https://', variables('functionAppName'), '.azurewebsites.net')]",
+                    "functionKey": {
+                        "type": "AzureKeyVaultSecret",
+                        "store": {
+                            "referenceName": "KeyVault_LS",
+                            "type": "LinkedServiceReference"
+                        },
+                        "secretName": "functionAppHostKey"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat('Microsoft.DataFactory/factories/', variables('dataFactoryName'), '/linkedServices/KeyVault_LS')]"
+            ]
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "name": "[concat(variables('dataFactoryName'), '/SampleSnowflakePipeline_P')]",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "StoredProcedure1",
+                        "type": "AzureFunctionActivity",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "functionName": "SnowflakeConnectorAdf",
+                            "method": "POST",
+                            "headers": {},
+                            "body": {
+                                "value": "{\n  \"databaseName\": \"MyDatabase\",\n  \"schemaName\": \"MySchema\",\n  \"storedProcedureName\": \"MyStoredProcedure\",\n  \"firstName\": \"@{pipeline().parameters.firstName}\",\n  \"age\": @{pipeline().parameters.age}\n}",
+                                "type": "Expression"
+                            }
+                        },
+                        "linkedServiceName": {
+                            "referenceName": "FunctionApp_LS",
+                            "type": "LinkedServiceReference"
+                        }
+                    },
+                    {
+                        "name": "StoredProcedure2",
+                        "type": "AzureFunctionActivity",
+                        "dependsOn": [
+                            {
+                                "activity": "StoredProcedure1",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "functionName": "SnowflakeConnectorAdf",
+                            "method": "POST",
+                            "headers": {},
+                            "body": {
+                                "value": "{\n  \"databaseName\": \"MyDatabase\",\n  \"schemaName\": \"MySchema\",\n  \"storedProcedureName\": \"MyStoredProcedure\",\n  \"firstName\": \"@{activity('StoredProcedure1').output.customOutput.OUTPUT_1}\",\n  \"age\": @{activity('StoredProcedure1').output.customOutput.OUTPUT_2}\n}",
+                                "type": "Expression"
+                            }
+                        },
+                        "linkedServiceName": {
+                            "referenceName": "FunctionApp_LS",
+                            "type": "LinkedServiceReference"
+                        }
+                    }
+                ],
+                "parameters": {
+                    "firstName": {
+                        "type": "string",
+                        "defaultValue": "Foo"
+                    },
+                    "age": {
+                        "type": "int",
+                        "defaultValue": 5
+                    }
+                },
+                "annotations": []
+            },
+            "dependsOn": [
+                "[concat('Microsoft.DataFactory/factories/', variables('dataFactoryName'), '/linkedServices/FunctionApp_LS')]"
+            ]
+        }
+    ]
+}
