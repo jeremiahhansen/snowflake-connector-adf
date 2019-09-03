@@ -137,6 +137,12 @@ namespace Snowflake.Connector
         {
             foreach (var param in parameters)
             {
+                // Guard aginst SQL Injection attacks
+                if (param.Value.ToString().Contains(";"))
+                {
+                    throw new Exception($"Found a semicolon in the value for parameter {param.Name}");
+                }
+
                 var paramStringWithQuotes = @"\/\*Parameter_With_Quotes\*\/.*\/\*" + param.Name + @"\*\/";
                 var paramString = @"\/\*Parameter\*\/.*\/\*" + param.Name + @"\*\/";
                 sqlText = Regex.Replace(sqlText, paramStringWithQuotes, "'" + param.Value.ToString() + "'");
