@@ -1,5 +1,134 @@
 # Snowflake Connector for Azure Data Factory (ADF)
-This connector is an Azure Function which allows Azure Data Factory (ADF) to connect to Snowflake in a flexible way.
+This connector is an Azure Function which allows Azure Data Factory (ADF) to connect to Snowflake in a flexible way. It provides SQL-based stored procedure functionality with dyamic parameters and return values. Used with ADF you can build complete end-to-end data warehouse solutions for Snowflake while following Microsoft and Azure best practices around portability and security.
+
+To get started please follow the steps outlined in the [Prerequisites](#Prerequisites) and [Setup](#Setup) sections below.
+
+_**Note**_: As of September 2019 ADF does not provide a native Snowflake connector and Snowflake does not provide native SQL-based stored procedures. The goal of this connector is to enable SQL-based stored procedures against Snowflake from ADF so that when both native connectors are available the migration will be as painless as possible.
+
+## Table of Contents
+1. Connector Overview
+   1. [High Level Overview](#high-level-overview)
+   1. [Parameters](#parameters)
+   1. [Multiple Queries](#multiple-queries)
+   1. [Return Values](#return-values)
+   1. [Script Storage](#script-storage)
+1. [ADF Overview](#adf-overview)
+1. [Prerequisites](#prerequisites)
+1. [Setup](#setup)
+
+## Connector Overview
+### High Level Overview
+At a really high level stored procedures provide the ability to pass parameters (or arguments), run multiple SQL statments, and return values. To enable these capabilities in a Snowflake query I had to come up with a macro-like syntax. It was also important to make sure the queries could be run in Snowflake as-is to enable better debugging and development lifecycle support. I accomplished this by using standard Snowflake SQL comments which leverage the conventions outlined below.
+
+The following is a sample SQL script which this connector treats like a stored procedure:
+
+```sql
+SELECT /*Parameter_With_Quotes*/'John'/*firstName*/ AS FIRST_NAME, 'Doe' AS LAST_NAME, 1 AS AGE;
+
+/*Sql_Query_Separator*/
+
+SELECT CONCAT(/*Parameter_With_Quotes*/'John'/*firstName*/, 'Bar') AS OUTPUT_1, /*Parameter*/1/*age*/ + 100 AS OUTPUT_2;
+```
+
+The connector expects all input to be supplied via the `POST` body. Here is a sample `POST` body to execute the script above:
+
+```json
+{
+    "databaseName": "MyDatabase",
+    "schemaName": "MySchema",
+    "storedProcedureName": "MyStoredProcedure",
+    "firstName": "Foo",
+    "age": 10
+}
+```
+And in this case the connector would return the following JSON object:
+
+```json
+{
+    "customOutput": {
+        "OUTPUT_1": "FooBar",
+        "OUTPUT_2": "110"
+    }
+}
+```
+
+### Parameters
+Passing parameters (or arguments) to a stored procedure is critical so that the same code can be reused. At a high level there are two types of parameters:
+
+1. Quoted Parameters
+1. Non-Quoted Parameters
+
+Here is the second query from the [High Level Overview](#high-level-overview) above, with one of each parameter type:
+
+```sql
+SELECT CONCAT(/*Parameter_With_Quotes*/'John'/*firstName*/, 'Bar') AS OUTPUT_1, /*Parameter*/1/*age*/ + 100 AS OUTPUT_2;
+```
+
+The macro-like syntax is that the parameter to replace always begins with either `/*Parameter_With_Quotes*/` or `/*Parameter*/` (depending on the type of parameter desired). It is then followed with a default value for the parameter and another comment which contains the name of the parameter (which is case sensitive). As you can see `/*Parameter_With_Quotes*/` replaces the value with single quotes while `/*Parameter*/` does not.
+
+The connector expects all parameters to be supplied via the `POST` body. Here is a snippet from `POST` body in the [High Level Overview](#high-level-overview) section above which contains the parameter values:
+
+```json
+{
+    ...
+    "firstName": "Foo",
+    "age": 10
+}
+```
+
+These two attributes, `firstName` and `age`, correspond to the placeholders in the SQL query above. This works entirely on a name matching basis, the attribute name in the `POST` body must match the placeholder name in the SQL query exactly (i.e. they are case sensitive).
+
+### Multiple Queries
+Executing multiple SQL statements in a stored procedure is critical to support non-trival use cases. As of September 2019 the Snowflake API does not support running multiple SQL statements in a single API call. Because of that we need some way to identify the boundaries between queries. Ideally we would parse the script and use the semicolon statement separator for this purpose. But currenlty the connector does not have such parsing logic and relies instead on the following convention.
+
+Each query in the script must be separated by the following comment: `/*Sql_Query_Separator*/`
+
+### Return Values
+Returning values from a stored procedure is critical so that we can pass status and other elements (like row counts) to the caller. To enable return values the connector expects the final query in the script to return a result set with a single row with one or more columns. Here is the second query again from the [High Level Overview](#high-level-overview) above that does just that:
+
+```sql
+SELECT CONCAT(/*Parameter_With_Quotes*/'John'/*firstName*/, 'Bar') AS OUTPUT_1, /*Parameter*/1/*age*/ + 100 AS OUTPUT_2;
+```
+
+The columns in the result are pivoted so that each column and value pair becomes one return value. The query above then returns two values `OUTPUT_1` and `OUTPUT_2`. Here is the resulting JSON object which the connector returns:
+
+```json
+{
+    "customOutput": {
+        "OUTPUT_1": "FooBar",
+        "OUTPUT_2": "110"
+    }
+}
+```
+
+*Note*: The return values are attributes of the `customOutput` object. This was originally done to match the behaviour of the *Custom Activity* in ADF and can be easily changed in the connector code.
+
+### Script Storage
+All "stored procedure" scripts executed by this connector are stored in an Azure Blob Storage account. The container name is configurable but defaults to `storedprocedures`. Within the container all files are organized according to the following convention (all case sensitive):
+
+```
+/<Database Name>
+    /<Schema Name>
+        /<Stored Procedure Name>.sql
+```
+
+The connector expects all three parameters to be supplied via the `POST` body. Here is a snippet from `POST` body in the [High Level Overview](#high-level-overview) section above which contains the required parameter values:
+
+```json
+{
+    "databaseName": "MyDatabase",
+    "schemaName": "MySchema",
+    "storedProcedureName": "MyStoredProcedure",
+    ...
+}
+```
+
+The connector builds a blob storage path based off of those values and reads in the corresponding script file. In this case the full path is `/MyDatabase/MySchema/MyStoredProcedure.sql`. You can find the sample [MyStoredProcedure.sql](/Docs/MyStoredProcedure.sql) script in the */Docs* folder of this repo.
+
+## ADF Overview
+Here is an overview of the ADF pipeline created durig the [Setup](#setup) section below:
+
+![ADF Pipeline Overview](/Docs/Screenshots/adf-pipeline-overview.png?raw=true "ADF Pipeline Overview")
 
 ## Prerequisites
 In order to deploy the connector and associate Azure resources you must have the following:
@@ -10,7 +139,7 @@ In order to deploy the connector and associate Azure resources you must have the
    1. Azure Functions (see the [Azure Functions Getting Started](https://code.visualstudio.com/tutorials/functions-extension/getting-started) guide for more setup steps)
 
 ## Setup
-Please complete the steps outlined in the **Prerequisites** section first and then do the following:
+Please complete the steps outlined in the [Prerequisites](#Prerequisites) section first and then do the following:
 
 1. Create an Azure Resource Group to contain the required Azure resources (we'll be creating 5 resources total)
 1. Lookup your Azure Active Directory Object Id
@@ -64,5 +193,17 @@ Please complete the steps outlined in the **Prerequisites** section first and th
    1. Click on the "SampleSnowflakePipeline_P" pipeline in the Factory Resources section
    1. Click on the "Debug" link and then "Finish" to execute the pipeline
 
-## Creating Stored Procedure Scripts
-TODO: Add details here
+In order to debug/run the Azure Function locally you need to create a `local.settings.json` file and add the three environment variables expected by the function. Here is a template for the contents of the file (you'll need to replace all <> placeholders with real values for your environment):
+
+```json
+{
+    "IsEncrypted": false,
+    "Values": {
+        "AzureWebJobsStorage": "",
+        "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+        "storageAccountConnectionString": "DefaultEndpointsProtocol=https;AccountName=<Storage Account Name>;AccountKey=<Storage Account Key>;EndpointSuffix=core.windows.net",
+        "storageAccountContainerName": "storedprocedures",
+        "snowflakeConnectionString": "account=<Snowflake Account Name>;user=<Snowflake User Name;password=<Snowflake User Password>"
+    }
+}
+```
