@@ -25,8 +25,6 @@ The following is a sample SQL script which this connector treats like a stored p
 ```sql
 SELECT /*Parameter_With_Quotes*/'John'/*firstName*/ AS FIRST_NAME, 'Doe' AS LAST_NAME, 1 AS AGE;
 
-/*Sql_Query_Separator*/
-
 SELECT CONCAT(/*Parameter_With_Quotes*/'John'/*firstName*/, 'Bar') AS OUTPUT_1, /*Parameter*/1/*age*/ + 100 AS OUTPUT_2;
 ```
 
@@ -37,10 +35,13 @@ The connector expects all input to be supplied via the `POST` body. Here is a sa
     "databaseName": "MyDatabase",
     "schemaName": "MySchema",
     "storedProcedureName": "MyStoredProcedure",
-    "firstName": "Foo",
-    "age": 10
+    "parameters": {
+        "firstName": "Foo",
+        "age": 10
+    }
 }
 ```
+
 And in this case the connector would return the following JSON object:
 
 ```json
@@ -66,22 +67,23 @@ SELECT CONCAT(/*Parameter_With_Quotes*/'John'/*firstName*/, 'Bar') AS OUTPUT_1, 
 
 The macro-like syntax is that the parameter to replace always begins with either `/*Parameter_With_Quotes*/` or `/*Parameter*/` (depending on the type of parameter desired). It is then followed with a default value for the parameter and another comment which contains the name of the parameter (which is case sensitive). As you can see `/*Parameter_With_Quotes*/` replaces the value with single quotes while `/*Parameter*/` does not.
 
-The connector expects all parameters to be supplied via the `POST` body. Here is a snippet from `POST` body in the [High Level Overview](#high-level-overview) section above which contains the parameter values:
+The connector expects all parameters to be supplied via the `parameters` JSON object in the `POST` body. Here is a snippet from `POST` body in the [High Level Overview](#high-level-overview) section above which contains the parameter values:
 
 ```json
 {
-    ...
-    "firstName": "Foo",
-    "age": 10
+    "parameters": {
+        "firstName": "Foo",
+        "age": 10
+    }
 }
 ```
 
 These two attributes, `firstName` and `age`, correspond to the placeholders in the SQL query above. This works entirely on a name matching basis, the attribute name in the `POST` body must match the placeholder name in the SQL query exactly (i.e. they are case sensitive).
 
 ### Multiple Queries
-Executing multiple SQL statements in a stored procedure is critical to support non-trival use cases. As of September 2019 the Snowflake API does not support running multiple SQL statements in a single API call. Because of that we need some way to identify the boundaries between queries. Ideally we would parse the script and use the semicolon statement separator for this purpose. But currenlty the connector does not have such parsing logic and relies instead on the following convention.
+Executing multiple SQL statements in a stored procedure is critical to support non-trival use cases. As of September 2019 the Snowflake API does not support running multiple SQL statements in a single API call. Because of that we need to manualy break up the script into each individual statement and run them sequentially. We also need to make sure that we run then in the same Snowflake session so that session scoped variables can be used across queries.
 
-Each query in the script must be separated by the following comment: `/*Sql_Query_Separator*/`
+The connector uses the standard SQL semicolon to identify query boundaries. As such the semicolon is required after each query.
 
 ### Return Values
 Returning values from a stored procedure is critical so that we can pass status and other elements (like row counts) to the caller. To enable return values the connector expects the final query in the script to return a result set with a single row with one or more columns. Here is the second query again from the [High Level Overview](#high-level-overview) above that does just that:
@@ -112,23 +114,24 @@ All "stored procedure" scripts executed by this connector are stored in an Azure
         /<Stored Procedure Name>.sql
 ```
 
-The connector expects all three parameters to be supplied via the `POST` body. Here is a snippet from `POST` body in the [High Level Overview](#high-level-overview) section above which contains the required parameter values:
+The connector expects all three parameters to be supplied via the JSON `POST` body. Here is a snippet from `POST` body in the [High Level Overview](#high-level-overview) section above which contains the required parameter values:
 
 ```json
 {
     "databaseName": "MyDatabase",
     "schemaName": "MySchema",
-    "storedProcedureName": "MyStoredProcedure",
-    ...
+    "storedProcedureName": "MyStoredProcedure"
 }
 ```
 
-The connector builds a blob storage path based off of those values and reads in the corresponding script file. In this case the full path is `/MyDatabase/MySchema/MyStoredProcedure.sql`. You can find the sample [MyStoredProcedure.sql](/Docs/MyStoredProcedure.sql) script in the */Docs* folder of this repo.
+The connector builds a blob storage path based off of those values and reads in the corresponding script file. In this case the full path is `/MyDatabase/MySchema/MyStoredProcedure.sql`. You can find the sample [MyStoredProcedure.sql](/Docs/MyStoredProcedure.sql) script in the `/Docs` folder of this repo.
 
 ## ADF Overview
-Here is an overview of the ADF pipeline created durig the [Setup](#setup) section below:
+This project comes with a sample ADF pipeline which demonstrates how to use this connector within ADF. The sample ADF resources are deployed during the [Setup](#setup) section below and are contained in the [SnowflakeConnectorAdfArmTemplate.json](/Docs/SnowflakeConnectorAdfArmTemplate.json) script in the `/Docs` folder of this repo. Here is a screenshot showing one activity within the sample ADF pipeline:
 
 ![ADF Pipeline Overview](/Docs/Screenshots/adf-pipeline-overview.png?raw=true "ADF Pipeline Overview")
+
+As shown in the screenshot above we use the native `Azure Function` Activity in ADF to interact with the Snowflake connector. The method is `POST` and the body contains both the 
 
 ## Prerequisites
 In order to deploy the connector and associate Azure resources you must have the following:

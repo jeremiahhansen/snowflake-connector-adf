@@ -268,7 +268,7 @@
                             "method": "POST",
                             "headers": {},
                             "body": {
-                                "value": "{\n  \"databaseName\": \"MyDatabase\",\n  \"schemaName\": \"MySchema\",\n  \"storedProcedureName\": \"MyStoredProcedure\",\n  \"firstName\": \"@{pipeline().parameters.firstName}\",\n  \"age\": @{pipeline().parameters.age}\n}",
+                                "value": "{\n  \"databaseName\": \"MyDatabase\",\n  \"schemaName\": \"MySchema\",\n  \"storedProcedureName\": \"MyStoredProcedure\",\n  \"parameters\": {\n    \"firstName\": \"@{pipeline().parameters.firstName}\",\n    \"age\": @{pipeline().parameters.age}\n  }\n}",
                                 "type": "Expression"
                             }
                         },
@@ -301,7 +301,7 @@
                             "method": "POST",
                             "headers": {},
                             "body": {
-                                "value": "{\n  \"databaseName\": \"MyDatabase\",\n  \"schemaName\": \"MySchema\",\n  \"storedProcedureName\": \"MyStoredProcedure\",\n  \"firstName\": \"@{activity('StoredProcedure1').output.customOutput.OUTPUT_1}\",\n  \"age\": @{activity('StoredProcedure1').output.customOutput.OUTPUT_2}\n}",
+                                "value": "{\n  \"databaseName\": \"MyDatabase\",\n  \"schemaName\": \"MySchema\",\n  \"storedProcedureName\": \"MyStoredProcedure\",\n  \"parameters\": {\n    \"firstName\": \"@{activity('StoredProcedure1').output.customOutput.OUTPUT_1}\",\n    \"age\": @{activity('StoredProcedure1').output.customOutput.OUTPUT_2}\n  }\n}",
                                 "type": "Expression"
                             }
                         },

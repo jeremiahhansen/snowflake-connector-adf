@@ -69,9 +69,13 @@ namespace Snowflake.Connector
             // Get the SQL query to execute
             Task<string> blobReadTask = readContentFromBlobAsync(log, storageAccountConnectionString, storageAccountContainerName, storageAccountBlobFilePath);
             string sqlText = blobReadTask.GetAwaiter().GetResult();
+            sqlText = sqlText.Trim();
 
-            // Replace all parameter placeholders
-            sqlText = replaceSqlParameterPlaceholders(sqlText, requestBody);
+            // Replace all parameter placeholders, if they've been defined
+            if (requestBody.ContainsKey("parameters"))
+            {
+                sqlText = replaceSqlParameterPlaceholders(sqlText, requestBody.parameters);
+            }
 
             // At this point, there should be no more /*Parameter*/ or /*Parameter_With_Quotes*/ values.
             if (sqlText.Contains("/*Parameter*/") || sqlText.Contains("/*Parameter_With_Quotes*/"))
@@ -149,10 +153,11 @@ namespace Snowflake.Connector
         /// <returns>An array of SQL commands</returns>
         private static string[] splitSqlCommands(string sqlText)
         {
-                // Split sqlText on a /*Sql_Query_Separator*/ comment
-                string[] sqlCommands = sqlText.Split(new[] { "/*Sql_Query_Separator*/" }, StringSplitOptions.RemoveEmptyEntries);
+            // Split sqlText on the query separator
+            // If semicolon (;) doesn't work then try using the /*Sql_Query_Separator*/ comment
+            string[] sqlCommands = sqlText.Split(new[] { ";" }, StringSplitOptions.RemoveEmptyEntries);
 
-                return sqlCommands;
+            return sqlCommands;
         }
 
         /// <summary>
