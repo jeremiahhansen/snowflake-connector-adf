@@ -1,20 +1,22 @@
 # Snowflake Connector for Azure Data Factory (ADF)
 This connector is an Azure Function which allows Azure Data Factory (ADF) to connect to Snowflake in a flexible way. It provides SQL-based stored procedure functionality with dyamic parameters and return values. Used with ADF you can build complete end-to-end data warehouse solutions for Snowflake while following Microsoft and Azure best practices around portability and security.
 
-To get started please follow the steps outlined in the [Prerequisites](#Prerequisites) and [Setup](#Setup) sections below.
+To get started please follow the steps outlined in the [Prerequisites](#Prerequisites) and [Deployment](#deployment) sections below.
 
 _**Note**_: As of September 2019 ADF does not provide a native Snowflake connector and Snowflake does not provide native SQL-based stored procedures. The goal of this connector is to enable SQL-based stored procedures against Snowflake from ADF so that when both native connectors are available the migration will be as painless as possible.
 
 ## Table of Contents
-1. Connector Overview
+1. [Connector Overview](#connector-overview)
    1. [High Level Overview](#high-level-overview)
    1. [Parameters](#parameters)
    1. [Multiple Queries](#multiple-queries)
    1. [Return Values](#return-values)
    1. [Script Storage](#script-storage)
-1. [ADF Overview](#adf-overview)
+1. [Integration with ADF](#integration-with-adf)
+   1. [ADF Overview](#adf-overview)
+   1. [ADF Expressions](#adf-expressions)
 1. [Prerequisites](#prerequisites)
-1. [Setup](#setup)
+1. [Deployment](#deployment)
 
 ## Connector Overview
 ### High Level Overview
@@ -126,12 +128,42 @@ The connector expects all three parameters to be supplied via the JSON `POST` bo
 
 The connector builds a blob storage path based off of those values and reads in the corresponding script file. In this case the full path is `/MyDatabase/MySchema/MyStoredProcedure.sql`. You can find the sample [MyStoredProcedure.sql](/Docs/MyStoredProcedure.sql) script in the `/Docs` folder of this repo.
 
-## ADF Overview
-This project comes with a sample ADF pipeline which demonstrates how to use this connector within ADF. The sample ADF resources are deployed during the [Setup](#setup) section below and are contained in the [SnowflakeConnectorAdfArmTemplate.json](/Docs/SnowflakeConnectorAdfArmTemplate.json) script in the `/Docs` folder of this repo. Here is a screenshot showing one activity within the sample ADF pipeline:
+## Integration with ADF
+### ADF Overview
+This project comes with a sample ADF pipeline which demonstrates how to use this connector within ADF. The sample ADF resources are deployed during the [Deployment](#deployment) section below and are contained in the [SnowflakeConnectorAdfArmTemplate.json](/Docs/SnowflakeConnectorAdfArmTemplate.json) script in the `/Docs` folder of this repo. Here is a screenshot showing one activity within the sample ADF pipeline:
 
 ![ADF Pipeline Overview](/Docs/Screenshots/adf-pipeline-overview.png?raw=true "ADF Pipeline Overview")
 
-As shown in the screenshot above we use the native `Azure Function` Activity in ADF to interact with the Snowflake connector. The method is `POST` and the body contains both the 
+As shown in the screenshot above we use the native `Azure Function` Activity in ADF to interact with the Snowflake connector. The HTTP method is `POST` and the body contains the elements described above.
+
+### ADF Expressions
+[Expressions in ADF](https://docs.microsoft.com/en-us/azure/data-factory/control-flow-expression-language-functions) are very powerful and allow us to make the parameters passed to the connector very flexible. The screenshot above shows how to make use of ADF pipeline parameters when calling the connector. Here is the body of the HTTP request from the first ADF activity:
+
+```
+{
+  "databaseName": "MyDatabase",
+  "schemaName": "MySchema",
+  "storedProcedureName": "MyStoredProcedure",
+  "parameters": {
+    "firstName": "@{pipeline().parameters.firstName}",
+    "age": @{pipeline().parameters.age}
+  }
+}
+```
+
+And in order to access return values from an ADF activity we make use of the `activity()` expression function. Here is the body of the HTTP request from the second ADF activity:
+
+```
+{
+  "databaseName": "MyDatabase",
+  "schemaName": "MySchema",
+  "storedProcedureName": "MyStoredProcedure",
+  "parameters": {
+    "firstName": "@{activity('StoredProcedure1').output.customOutput.OUTPUT_1}",
+    "age": @{activity('StoredProcedure1').output.customOutput.OUTPUT_2}
+  }
+}
+```
 
 ## Prerequisites
 In order to deploy the connector and associate Azure resources you must have the following:
@@ -141,7 +173,7 @@ In order to deploy the connector and associate Azure resources you must have the
    1. C#
    1. Azure Functions (see the [Azure Functions Getting Started](https://code.visualstudio.com/tutorials/functions-extension/getting-started) guide for more setup steps)
 
-## Setup
+## Deployment
 Please complete the steps outlined in the [Prerequisites](#Prerequisites) section first and then do the following:
 
 1. Create an Azure Resource Group to contain the required Azure resources (we'll be creating 5 resources total)
@@ -159,7 +191,7 @@ Please complete the steps outlined in the [Prerequisites](#Prerequisites) sectio
       1. *Resource Group*: Select the Resource Group you created earlier
       1. *Resource Name Prefix*: Pick a unique prefix which will be appended to all Azure resources created
       1. *Key Vault Owner Object Id*: Paste the Active Directory Object Id you looked up earlier
-      1. *Snowflake Connection String*: Enter the Snowflake connection string to your Snowflake account in the following format: `account=<account name>;user=<user name>;password=<user password>` (see the [Snowflake Connector for .NET](https://github.com/snowflakedb/snowflake-connector-net) page for more details)
+      1. *Snowflake Connection String*: Enter the Snowflake connection string to your Snowflake account in the following format: `account=<Snowflake Account Name>;user=<Snowflake User Name>;password=<Snowflake User Password>` (see the [Snowflake Connector for .NET](https://github.com/snowflakedb/snowflake-connector-net) page for more details)
       1. Check the "I agree to the terms and conditions stated above" and click "Purchase" (*Note*: this just means that you agree to pay for the Azure resources being created by the ARM template)
    1. Wait for the ARM deployment to complete
 1. Create a Key Vault Access Policy for the Function App
@@ -210,3 +242,5 @@ In order to debug/run the Azure Function locally you need to create a `local.set
     }
 }
 ```
+
+See the [Snowflake Connector for .NET](https://github.com/snowflakedb/snowflake-connector-net) page for important details around the Snowflake account name.
