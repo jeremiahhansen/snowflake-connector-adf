@@ -17,7 +17,8 @@
         "storageAccountName": "[concat(parameters('resourceNamePrefix'), 'sa')]",
         "appServicePlanName": "[concat(parameters('resourceNamePrefix'), 'asp')]",
         "functionAppName": "[concat(parameters('resourceNamePrefix'), 'fa')]",
-        "dataFactoryName": "[concat(parameters('resourceNamePrefix'), 'adf')]"
+        "dataFactoryName": "[concat(parameters('resourceNamePrefix'), 'adf')]",
+        "storageAccountContainerName": "storedprocedures"
     },
     "resources": [
         {
@@ -97,7 +98,7 @@
         {
             "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
             "apiVersion": "2019-04-01",
-            "name": "[concat(variables('storageAccountName'), '/default/storedprocedures')]",
+            "name": "[concat(variables('storageAccountName'), '/default/', variables('storageAccountContainerName'))]",
             "properties": {
                 "publicAccess": "None"
             },
@@ -167,11 +168,11 @@
                         },
                         {
                             "name": "storageAccountConnectionString",
-                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageAccountName'),';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+                            "value": "[concat('@Microsoft.KeyVault(SecretUri=https://',variables('keyVaultName'),'.vault.azure.net/secrets/storageAccountConnectionString/VERSION)')]"
                         },
                         {
                             "name": "storageAccountContainerName",
-                            "value": "storedprocedures"
+                            "value": "[variables('storageAccountContainerName')]"
                         },
                         {
                             "name": "snowflakeConnectionString",
@@ -182,6 +183,19 @@
             },
             "dependsOn": [
                 "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.KeyVault/vaults/secrets",
+            "apiVersion": "2018-02-14",
+            "name": "[concat(variables('keyVaultName'), '/storageAccountConnectionString')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageAccountName'),';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+                "[variables('storageAccountName')]"
             ]
         },
         {

@@ -20,7 +20,9 @@ _**Note**_: As of September 2019 ADF does not provide a native Snowflake connect
 
 ## Connector Overview
 ### High Level Overview
-At a really high level stored procedures provide the ability to pass parameters (or arguments), run multiple SQL statments, and return values. To enable these capabilities in a Snowflake query I had to come up with a macro-like syntax. It was also important to make sure the queries could be run in Snowflake as-is to enable better debugging and development lifecycle support. I accomplished this by using standard Snowflake SQL comments which leverage the conventions outlined below.
+At a really high level stored procedures provide the ability to pass parameters (or arguments), run multiple SQL statments, and return values. To enable these capabilities in a Snowflake query I had to come up with a macro-like syntax. It was also important to make sure the queries could be run in Snowflake as-is to enable better debugging and development lifecycle support. I accomplished this by using standard Snowflake SQL comments which leverage the conventions outlined below. But first here is a sequence diagram to help explain the overall process:
+
+![Connector Sequence Diagram](/Docs/Screenshots/connector-sequence-diagram.png?raw=true "Connector Sequence Diagram")
 
 The following is a sample SQL script which this connector treats like a stored procedure:
 
@@ -212,6 +214,8 @@ Please complete the steps outlined in the [Prerequisites](#Prerequisites) sectio
    1. Click on the "Platform features" link and then on "Configuration"
    1. Edit the "snowflakeConnectionString" setting and replace the `VERSION` string with the "CURRENT VERSION" ID from earlier
    1. Click "Save" (**important**)
+1. Update the `storageAccountConnectionString` Function App setting with Key Vault secret version number (**note**: this is a temporary workaround until Azure Key Vault integration with Azure Functions is GA)
+   1. Follow the steps above except this time use the "storageAccountConnectionString" secret
 1. Upload the stored procedure scripts to the new storage account
    1. Connect to the new storage account either through the [Azure Portal UI](https://portal.azure.com) or the [Azure Storage Explorer](https://azure.microsoft.com/en-us/features/storage-explorer/)
    1. Create the following folder structure in the "storedprocedures" container: `MyDatabase\MySchema`
