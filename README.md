@@ -249,7 +249,7 @@ In order to debug/run the Azure Function locally you need to create a `local.set
         "FUNCTIONS_WORKER_RUNTIME": "dotnet",
         "storageAccountConnectionString": "DefaultEndpointsProtocol=https;AccountName=<Storage Account Name>;AccountKey=<Storage Account Key>;EndpointSuffix=core.windows.net",
         "storageAccountContainerName": "storedprocedures",
-        "snowflakeConnectionString": "account=<Snowflake Account Name>;user=<Snowflake User Name;password=<Snowflake User Password>"
+        "snowflakeConnectionString": "account=<Snowflake Account Name>;user=<Snowflake User Name>;password=<Snowflake User Password>"
     }
 }
 ```
