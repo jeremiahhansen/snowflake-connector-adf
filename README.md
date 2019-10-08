@@ -177,6 +177,7 @@ And in order to access return values from an ADF activity we make use of the `ac
 In order to deploy the connector and associate Azure resources you must have the following:
 
 1. An Azure Subscription with at least Contributor access to a resource group
+1. [.NET Core 2.2](https://dotnet.microsoft.com/download/dotnet-core/2.2) installed on your computer
 1. [Visual Studio Code](https://code.visualstudio.com) installed on your computer with the following Extensions installed
    1. C#
    1. Azure Functions (see the [Azure Functions Getting Started](https://code.visualstudio.com/tutorials/functions-extension/getting-started) guide for more setup steps)
