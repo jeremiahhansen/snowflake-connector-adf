@@ -17,6 +17,13 @@ namespace Snowflake.Connector
 {
     public static class SnowflakeConnectorAdf
     {
+        // This corresponds to a restricted Snowflake unquoted identifier
+        // https://docs.snowflake.net/manuals/sql-reference/identifiers-syntax.html
+        private static string _validParameterNameRegex = @"^[A-Za-z_]{1}[A-Za-z0-9_-]*$";
+        // This is pretty restrictive
+        private static string _validParameterValueRegex = @"^[A-Za-z0-9./\\ ]+$";
+        private static string _validBlobFolderNameRegex = @"^[A-Za-z0-9_-]+$";
+
         [FunctionName("SnowflakeConnectorAdf")]
         public static async Task<IActionResult> Run(
             [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req,
@@ -105,6 +112,22 @@ namespace Snowflake.Connector
         /// <returns>The blob file path to the stored procedure</returns>
         private static string generateStoredProcedureBlobFilePath(string databaseName, string schemaName, string storedProcedureName)
         {
+            // Validate the blob path elements
+            #region Validate inputs
+            if (!Regex.IsMatch(databaseName, _validBlobFolderNameRegex))
+            {
+                throw new Exception($"Found invalid databaseName value: {databaseName}");
+            }
+            if (!Regex.IsMatch(schemaName, _validBlobFolderNameRegex))
+            {
+                throw new Exception($"Found invalid schemaName value: {schemaName}");
+            }
+            if (!Regex.IsMatch(storedProcedureName, _validBlobFolderNameRegex))
+            {
+                throw new Exception($"Found invalid storedProcedureName value: {storedProcedureName}");
+            }
+            #endregion Validate inputs
+
             return String.Format("{0}/{1}/{2}.sql", databaseName, schemaName, storedProcedureName);
         }
 
@@ -137,16 +160,25 @@ namespace Snowflake.Connector
         {
             foreach (var param in parameters)
             {
-                // Guard aginst SQL Injection attacks
-                if (param.Value.ToString().Contains(";"))
-                {
-                    throw new Exception($"Found a semicolon in the value for parameter {param.Name}");
-                }
+                string parameterName = param.Name.ToString();
+                string parameterValue = param.Value.ToString();
 
-                var paramStringWithQuotes = @"\/\*Parameter_With_Quotes\*\/.*\/\*" + param.Name + @"\*\/";
-                var paramString = @"\/\*Parameter\*\/.*\/\*" + param.Name + @"\*\/";
-                sqlText = Regex.Replace(sqlText, paramStringWithQuotes, "'" + param.Value.ToString() + "'");
-                sqlText = Regex.Replace(sqlText, paramString, param.Value.ToString());
+                // Validate the parameter data
+                #region Validate inputs
+                if (!Regex.IsMatch(parameterName, _validParameterNameRegex))
+                {
+                    throw new Exception($"Found invalid parameter name: {parameterName}");
+                }
+                if (!Regex.IsMatch(parameterValue, _validParameterValueRegex))
+                {
+                    throw new Exception($"Found invalid parameter value for {parameterName}: {parameterValue}");
+                }
+                #endregion Validate inputs
+
+                var paramStringWithQuotes = @"\/\*Parameter_With_Quotes\*\/.*\/\*" + parameterName + @"\*\/";
+                var paramString = @"\/\*Parameter\*\/.*\/\*" + parameterName + @"\*\/";
+                sqlText = Regex.Replace(sqlText, paramStringWithQuotes, "'" + parameterValue + "'");
+                sqlText = Regex.Replace(sqlText, paramString, parameterValue);
             }
 
             return sqlText;
