@@ -17,12 +17,13 @@ namespace Snowflake.Connector
 {
     public static class SnowflakeConnectorAdf
     {
-        // This corresponds to a restricted Snowflake unquoted identifier
+        private static string _validBlobFolderNameRegex = @"^[A-Za-z0-9_-]+$";
+        // The parameter name corresponds to a restricted Snowflake unquoted identifier
         // https://docs.snowflake.net/manuals/sql-reference/identifiers-syntax.html
         private static string _validParameterNameRegex = @"^[A-Za-z_]{1}[A-Za-z0-9_-]*$";
         // This is pretty restrictive
+        private static string _validParameterTypeRegex = @"^VARCHAR|NUMBER$";
         private static string _validParameterValueRegex = @"^[A-Za-z0-9./\\ ]+$";
-        private static string _validBlobFolderNameRegex = @"^[A-Za-z0-9_-]+$";
 
         [FunctionName("SnowflakeConnectorAdf")]
         public static async Task<IActionResult> Run(
@@ -73,30 +74,28 @@ namespace Snowflake.Connector
             // Generate the blob file path to the stored procedure
             string storageAccountBlobFilePath = generateStoredProcedureBlobFilePath(databaseName, schemaName, storedProcedureName);
 
-            // Get the SQL query to execute
+            // Get the SQL text to execute
             Task<string> blobReadTask = readContentFromBlobAsync(log, storageAccountConnectionString, storageAccountContainerName, storageAccountBlobFilePath);
             string sqlText = blobReadTask.GetAwaiter().GetResult();
             sqlText = sqlText.Trim();
+            if (sqlText.Length == 0)
+            {
+                throw new Exception($"Blob script {storageAccountBlobFilePath} is empty");
+            }
 
-            // Replace all parameter placeholders, if they've been defined
+            // Split the SQL text into individual queries since we can only run one query at a time against Snowflake
+            string[] sqlCommands = splitSqlCommands(sqlText);
+
+            // Convert any parameters to SQL variables
+            string setVariableCommand = "";
             if (requestBody.ContainsKey("parameters"))
             {
-                sqlText = replaceSqlParameterPlaceholders(sqlText, requestBody.parameters);
+                setVariableCommand = generateSetVariableCommand(requestBody.parameters);
             }
-
-            // At this point, there should be no more /*Parameter*/ or /*Parameter_With_Quotes*/ values.
-            if (sqlText.Contains("/*Parameter*/") || sqlText.Contains("/*Parameter_With_Quotes*/"))
-            {
-                throw new Exception("There are placeholders left over in sqlText after replacement: " + sqlText);
-            }
-
-            // Split sqlText into individual queries since we can only run one query at a time against Snowflake
-            string[] sqlCommands = splitSqlCommands(sqlText);
-            log.LogInformation($"Found {sqlCommands.Length} queries to execute");
 
             // Run the Snowflake SQL commands
             dynamic output = new JObject();
-            output.customOutput = runSnowflakeSqlCommands(log, snowflakeConnectionString, sqlCommands);
+            output.customOutput = runSnowflakeSqlCommands(log, snowflakeConnectionString, setVariableCommand, sqlCommands);
 
             // Return the result JSON object
             log.LogInformation($"Completed successfully at: {DateTime.Now.ToString()} (UTC).");
@@ -151,17 +150,20 @@ namespace Snowflake.Connector
         }
 
         /// <summary>
-        /// Replace all parameter placeholders in the SQL text
+        /// Generate the Snowflake SQL command to set all variables for the script
         /// </summary>
-        /// <param name="sqlText">The SQL text to be updated</param>
         /// <param name="parameters">JSON object containing the parameters</param>
-        /// <returns>The SQL text with all parameters replaced</returns>
-        private static string replaceSqlParameterPlaceholders(string sqlText, dynamic parameters)
+        /// <returns>The SQL command to set all variables</returns>
+        private static string generateSetVariableCommand(dynamic parameters)
         {
+            string snowflakeVariableNames = "";
+            string snowflakeVariableValues = "";
+
             foreach (var param in parameters)
             {
-                string parameterName = param.Name.ToString();
-                string parameterValue = param.Value.ToString();
+                string parameterName = param.name.ToString();
+                string parameterType = param.type.ToString();
+                string parameterValue = param.value.ToString();
 
                 // Validate the parameter data
                 #region Validate inputs
@@ -169,19 +171,36 @@ namespace Snowflake.Connector
                 {
                     throw new Exception($"Found invalid parameter name: {parameterName}");
                 }
+                if (!Regex.IsMatch(parameterType, _validParameterTypeRegex))
+                {
+                    throw new Exception($"Found invalid parameter type for {parameterName}: {parameterType}");
+                }
                 if (!Regex.IsMatch(parameterValue, _validParameterValueRegex))
                 {
                     throw new Exception($"Found invalid parameter value for {parameterName}: {parameterValue}");
                 }
                 #endregion Validate inputs
 
-                var paramStringWithQuotes = @"\/\*Parameter_With_Quotes\*\/.*\/\*" + parameterName + @"\*\/";
-                var paramString = @"\/\*Parameter\*\/.*\/\*" + parameterName + @"\*\/";
-                sqlText = Regex.Replace(sqlText, paramStringWithQuotes, "'" + parameterValue + "'");
-                sqlText = Regex.Replace(sqlText, paramString, parameterValue);
+                // Add a new variable for this parameter
+                snowflakeVariableNames += $"{parameterName},";
+                switch (parameterType)
+                {
+                    case "VARCHAR":
+                        snowflakeVariableValues += $"'{parameterValue}',";
+                        break;
+                    case "NUMBER":
+                        snowflakeVariableValues += $"{parameterValue},";
+                        break;
+                    default:
+                        throw new Exception($"Found invalid parameter type: {parameterType}");
+                }
             }
 
-            return sqlText;
+            // Remove the trailing comma from each string and return the final SQL command
+            char[] charactersToRemove = {','};
+            snowflakeVariableNames = snowflakeVariableNames.TrimEnd(charactersToRemove);
+            snowflakeVariableValues = snowflakeVariableValues.TrimEnd(charactersToRemove);
+            return $"SET ({snowflakeVariableNames}) = ({snowflakeVariableValues})";
         }
 
         /// <summary>
@@ -192,7 +211,6 @@ namespace Snowflake.Connector
         private static string[] splitSqlCommands(string sqlText)
         {
             // Split sqlText on the query separator
-            // If semicolon (;) doesn't work then try using the /*Sql_Query_Separator*/ comment
             string[] sqlCommands = sqlText.Split(new[] { ";" }, StringSplitOptions.RemoveEmptyEntries);
 
             return sqlCommands;
@@ -204,11 +222,13 @@ namespace Snowflake.Connector
         /// </summary>
         /// <param name="log">ILogger object</param>
         /// <param name="snowflakeConnectionString">Snowflake connection string</param>
+        /// <param name="setVariableCommand">The SQL set variable command to execute</param>
         /// <param name="sqlCommands">The SQL commands to execute</param>
         /// <returns>JSON object with column/value pairs from first row of the result</returns>
-        private static JObject runSnowflakeSqlCommands(ILogger log, string snowflakeConnectionString, string[] sqlCommands)
+        private static JObject runSnowflakeSqlCommands(ILogger log, string snowflakeConnectionString, string setVariableCommand, string[] sqlCommands)
         {
             var output = new JObject();
+            log.LogInformation($"Found {sqlCommands.Length} queries to execute");
 
             using (IDbConnection conn = new SnowflakeDbConnection())
             {
@@ -218,17 +238,25 @@ namespace Snowflake.Connector
 
                 using (IDbCommand cmd = conn.CreateCommand())
                 {
+                    // First run the set variable command, if we have one
+                    if (!String.IsNullOrEmpty(setVariableCommand))
+                    {
+                        cmd.CommandText = setVariableCommand;
+                        log.LogInformation($"Running SQL set variable command: {cmd.CommandText}");
+                        cmd.ExecuteNonQuery();
+                    }
+
                     // Run every query except the last one using ExecuteNonQuery()
                     for (int i = 0; i < sqlCommands.Length - 1; i++)
                     {
                         cmd.CommandText = sqlCommands[i].Trim();
-                        log.LogInformation($"Running SQL command #{i}: {cmd.CommandText}");
+                        log.LogInformation($"Running SQL command #{i+1}: {cmd.CommandText}");
                         cmd.ExecuteNonQuery();
                     }
 
                     // Finally run the last query using ExecuteReader() so we can collect the output
                     cmd.CommandText = sqlCommands[sqlCommands.Length - 1].Trim();
-                    log.LogInformation($"Running final SQL command: {cmd.CommandText}");
+                    log.LogInformation($"Running SQL command #{sqlCommands.Length} (final): {cmd.CommandText}");
                     IDataReader reader = cmd.ExecuteReader();
 
                     // The result should be a table with one row and n columns, format the column/value pairs in JSON

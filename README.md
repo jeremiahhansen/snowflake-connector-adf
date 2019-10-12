@@ -20,9 +20,7 @@ _**Note**_: As of September 2019 ADF does not provide a native Snowflake connect
 
 ## Connector Overview
 ### High Level Overview
-At a really high level stored procedures provide the ability to pass parameters (or arguments), run multiple SQL statments, and return values. To enable these capabilities in a Snowflake query I had to come up with a macro-like syntax. It was also important to make sure the queries could be run in Snowflake as-is to enable better debugging and development lifecycle support. I accomplished this by using standard Snowflake SQL comments which leverage the conventions outlined below.
-
-To begin with, here is a high level overview of the connector:
+At a really high level stored procedures provide the ability to pass parameters, run multiple SQL statments, and return values. I'll explain how it works below, but to begin with here is a high level overview of the connector:
 
 ![Connector Overview](/Docs/Screenshots/connector-overview.png?raw=true "Connector Overview")
 
@@ -33,9 +31,9 @@ And a more detailed sequence diagram to help explain the overall process:
 Now let's dig a bit deeper into how this works. The following is a sample SQL script which this connector treats like a stored procedure:
 
 ```sql
-SELECT /*Parameter_With_Quotes*/'John'/*firstName*/ AS FIRST_NAME, 'Doe' AS LAST_NAME, 1 AS AGE;
+SELECT $FIRST_NAME AS FIRST_NAME, 'Doe' AS LAST_NAME, 1 AS AGE;
 
-SELECT CONCAT(/*Parameter_With_Quotes*/'John'/*firstName*/, 'Bar') AS OUTPUT_1, /*Parameter*/1/*age*/ + 100 AS OUTPUT_2;
+SELECT CONCAT($FIRST_NAME, 'Bar') AS OUTPUT_1, $AGE + 100 AS OUTPUT_2;
 ```
 
 The connector expects all input to be supplied via the `POST` body. Here is a sample `POST` body to execute the script above:
@@ -45,10 +43,18 @@ The connector expects all input to be supplied via the `POST` body. Here is a sa
     "databaseName": "MyDatabase",
     "schemaName": "MySchema",
     "storedProcedureName": "MyStoredProcedure",
-    "parameters": {
-        "firstName": "Foo",
-        "age": 10
-    }
+    "parameters": [
+        {
+            "name": "FIRST_NAME",
+            "type": "VARCHAR",
+            "value": "Foo"
+        },
+        {
+            "name": "AGE",
+            "type": "NUMBER",
+            "value": "10"
+        }
+    ]
 }
 ```
 
@@ -64,34 +70,54 @@ And in this case the connector would return the following JSON object:
 ```
 
 ### Parameters
-Passing parameters (or arguments) to a stored procedure is critical so that the same code can be reused. At a high level there are two types of parameters:
+The connector leverages [Snowflake SQL session variables](https://docs.snowflake.net/manuals/sql-reference/session-variables.html) to pass values to the stored procedure script code.
 
-1. Quoted Parameters
-1. Non-Quoted Parameters
-
-Here is the second query from the [High Level Overview](#high-level-overview) above, with one of each parameter type:
-
-```sql
-SELECT CONCAT(/*Parameter_With_Quotes*/'John'/*firstName*/, 'Bar') AS OUTPUT_1, /*Parameter*/1/*age*/ + 100 AS OUTPUT_2;
-```
-
-The macro-like syntax is that the parameter to replace always begins with either `/*Parameter_With_Quotes*/` or `/*Parameter*/` (depending on the type of parameter desired). It is then followed with a default value for the parameter and another comment which contains the name of the parameter (which is case sensitive). As you can see `/*Parameter_With_Quotes*/` replaces the value with single quotes while `/*Parameter*/` does not.
-
-The connector expects all parameters to be supplied via the `parameters` JSON object in the `POST` body. Here is a snippet from `POST` body in the [High Level Overview](#high-level-overview) section above which contains the parameter values:
+The connector expects all parameters to be supplied via the `parameters` JSON array in the `POST` body. Here is a snippet from `POST` body in the [High Level Overview](#high-level-overview) section above which contains the parameter values:
 
 ```json
 {
-    "parameters": {
-        "firstName": "Foo",
-        "age": 10
-    }
+    "parameters": [
+        {
+            "name": "FIRST_NAME",
+            "type": "VARCHAR",
+            "value": "Foo"
+        },
+        {
+            "name": "AGE",
+            "type": "NUMBER",
+            "value": "10"
+        }
+    ]
 }
 ```
 
-These two attributes, `firstName` and `age`, correspond to the placeholders in the SQL query above. This works entirely on a name matching basis, the attribute name in the `POST` body must match the placeholder name in the SQL query exactly (i.e. they are case sensitive).
+Basically it's an array of objects, with each object representing one parameter. Each parameter JSON object needs to contain the following three attributes:
+
+1. name
+1. type
+1. value
+
+With the following values for `type` currently supported:
+
+* VARCHAR
+* NUMBER
+
+The connector generates a single `SET` query based of the parameters provided and executes it before running any of the queries in the SQL script. In this case the following `SET` query is generated:
+
+```sql
+SET (FIRST_NAME,AGE) = ('Foo',10)
+```
+
+The SQL queries in the script then access the parameters as standard Snowflake session variables. Here is the second query from the [High Level Overview](#high-level-overview) above which uses each parameter/variable:
+
+```sql
+SELECT CONCAT($FIRST_NAME, 'Bar') AS OUTPUT_1, $AGE + 100 AS OUTPUT_2;
+```
+
+For more advanced scenarios you can also leverage the Snowflake `IDENTIFIER()` function to dynamically reference Snowflake objects like databases, schemas, tables, columns, stage names, etc. See [String Literals / Session Variables / Bind Variables as Identifiers](https://docs.snowflake.net/manuals/sql-reference/identifier-literal.html) for more details.
 
 ### Multiple Queries
-Executing multiple SQL statements in a stored procedure is critical to support non-trival use cases. As of September 2019 the Snowflake API does not support running multiple SQL statements in a single API call. Because of that we need to manualy break up the script into each individual statement and run them sequentially. We also need to make sure that we run then in the same Snowflake session so that session scoped variables can be used across queries.
+Executing multiple SQL statements in a stored procedure is critical to support non-trival use cases. As of September 2019 the Snowflake API does not support running multiple SQL statements in a single API call. Because of that we need to manualy break up the script into each individual statement and run them sequentially. We also need to make sure that we run then in the same Snowflake session so that session scoped variables (the parameters) can be used across queries.
 
 The connector uses the standard SQL semicolon to identify query boundaries. As such the semicolon is required after each query.
 
@@ -99,7 +125,7 @@ The connector uses the standard SQL semicolon to identify query boundaries. As s
 Returning values from a stored procedure is critical so that we can pass status and other elements (like row counts) to the caller. To enable return values the connector expects the final query in the script to return a result set with a single row with one or more columns. Here is the second query again from the [High Level Overview](#high-level-overview) above that does just that:
 
 ```sql
-SELECT CONCAT(/*Parameter_With_Quotes*/'John'/*firstName*/, 'Bar') AS OUTPUT_1, /*Parameter*/1/*age*/ + 100 AS OUTPUT_2;
+SELECT CONCAT($FIRST_NAME, 'Bar') AS OUTPUT_1, $AGE + 100 AS OUTPUT_2;
 ```
 
 The columns in the result are pivoted so that each column and value pair becomes one return value. The query above then returns two values `OUTPUT_1` and `OUTPUT_2`. Here is the resulting JSON object which the connector returns:
@@ -147,29 +173,45 @@ As shown in the screenshot above we use the native `Azure Function` Activity in 
 ### ADF Expressions
 [Expressions in ADF](https://docs.microsoft.com/en-us/azure/data-factory/control-flow-expression-language-functions) are very powerful and allow us to make the parameters passed to the connector very flexible. The screenshot above shows how to make use of ADF pipeline parameters when calling the connector. Here is the body of the HTTP request from the first ADF activity:
 
-```
+```json
 {
   "databaseName": "MyDatabase",
   "schemaName": "MySchema",
   "storedProcedureName": "MyStoredProcedure",
-  "parameters": {
-    "firstName": "@{pipeline().parameters.firstName}",
-    "age": @{pipeline().parameters.age}
-  }
+  "parameters": [
+    {
+      "name": "FIRST_NAME",
+      "type": "VARCHAR",
+      "value": "@{pipeline().parameters.FIRST_NAME}"
+    },
+    {
+      "name": "AGE",
+      "type": "NUMBER",
+      "value": "@{pipeline().parameters.AGE}"
+    }
+  ]
 }
 ```
 
 And in order to access return values from an ADF activity we make use of the `activity()` expression function. Here is the body of the HTTP request from the second ADF activity:
 
-```
+```json
 {
   "databaseName": "MyDatabase",
   "schemaName": "MySchema",
   "storedProcedureName": "MyStoredProcedure",
-  "parameters": {
-    "firstName": "@{activity('StoredProcedure1').output.customOutput.OUTPUT_1}",
-    "age": @{activity('StoredProcedure1').output.customOutput.OUTPUT_2}
-  }
+  "parameters": [
+    {
+      "name": "FIRST_NAME",
+      "type": "VARCHAR",
+      "value": "@{activity('StoredProcedure1').output.customOutput.OUTPUT_1}"
+    },
+    {
+      "name": "AGE",
+      "type": "NUMBER",
+      "value": "@{activity('StoredProcedure1').output.customOutput.OUTPUT_2}"
+    }
+  ]
 }
 ```
 
