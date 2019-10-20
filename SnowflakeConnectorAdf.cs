@@ -94,8 +94,7 @@ namespace Snowflake.Connector
             }
 
             // Run the Snowflake SQL commands
-            dynamic output = new JObject();
-            output.customOutput = runSnowflakeSqlCommands(log, snowflakeConnectionString, setVariableCommand, sqlCommands);
+            JObject output = runSnowflakeSqlCommands(log, snowflakeConnectionString, setVariableCommand, sqlCommands);
 
             // Return the result JSON object
             log.LogInformation($"Completed successfully at: {DateTime.Now.ToString()} (UTC).");
@@ -171,7 +170,7 @@ namespace Snowflake.Connector
                 {
                     throw new Exception($"Found invalid parameter name: {parameterName}");
                 }
-                if (!Regex.IsMatch(parameterType, _validParameterTypeRegex))
+                if (!Regex.IsMatch(parameterType, _validParameterTypeRegex, RegexOptions.IgnoreCase))
                 {
                     throw new Exception($"Found invalid parameter type for {parameterName}: {parameterType}");
                 }
@@ -183,7 +182,7 @@ namespace Snowflake.Connector
 
                 // Add a new variable for this parameter
                 snowflakeVariableNames += $"{parameterName},";
-                switch (parameterType)
+                switch (parameterType.ToUpper())
                 {
                     case "VARCHAR":
                         snowflakeVariableValues += $"'{parameterValue}',";
@@ -259,7 +258,9 @@ namespace Snowflake.Connector
                     log.LogInformation($"Running SQL command #{sqlCommands.Length} (final): {cmd.CommandText}");
                     IDataReader reader = cmd.ExecuteReader();
 
-                    // The result should be a table with one row and n columns, format the column/value pairs in JSON
+                    // The final result should be a table with one row and n columns, format the column/value pairs in JSON.
+                    // Warning: If more than one row is returned in the final result this will return the following error:
+                    // "Property with the same name already exists on object."
                     while (reader.Read())
                     {
                         for (int i = 0; i < reader.FieldCount; i++)

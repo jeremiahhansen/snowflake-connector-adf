@@ -62,10 +62,8 @@ And in this case the connector would return the following JSON object:
 
 ```json
 {
-    "customOutput": {
-        "OUTPUT_1": "FooBar",
-        "OUTPUT_2": "110"
-    }
+    "OUTPUT_1": "FooBar",
+    "OUTPUT_2": "110"
 }
 ```
 
@@ -132,14 +130,13 @@ The columns in the result are pivoted so that each column and value pair becomes
 
 ```json
 {
-    "customOutput": {
-        "OUTPUT_1": "FooBar",
-        "OUTPUT_2": "110"
-    }
+    "OUTPUT_1": "FooBar",
+    "OUTPUT_2": "110"
 }
 ```
 
-*Note*: The return values are attributes of the `customOutput` object. This was originally done to match the behaviour of the *Custom Activity* in ADF and can be easily changed in the connector code.
+*Note:* If more than one row is returned in the final result the connector will fail with the following error: "Property with the same name already exists on object."
+
 
 ### Script Storage
 All "stored procedure" scripts executed by this connector are stored in an Azure Blob Storage account. The container name is configurable but defaults to `storedprocedures`. Within the container all files are organized according to the following convention (all case sensitive):
@@ -204,12 +201,12 @@ And in order to access return values from an ADF activity we make use of the `ac
     {
       "name": "FIRST_NAME",
       "type": "VARCHAR",
-      "value": "@{activity('StoredProcedure1').output.customOutput.OUTPUT_1}"
+      "value": "@{activity('StoredProcedure1').output.OUTPUT_1}"
     },
     {
       "name": "AGE",
       "type": "NUMBER",
-      "value": "@{activity('StoredProcedure1').output.customOutput.OUTPUT_2}"
+      "value": "@{activity('StoredProcedure1').output.OUTPUT_2}"
     }
   ]
 }

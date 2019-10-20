@@ -315,7 +315,7 @@
                             "method": "POST",
                             "headers": {},
                             "body": {
-                                "value": "{\n  \"databaseName\": \"MyDatabase\",\n  \"schemaName\": \"MySchema\",\n  \"storedProcedureName\": \"MyStoredProcedure\",\n  \"parameters\": [\n    {\n      \"name\": \"FIRST_NAME\",\n      \"type\": \"VARCHAR\",\n      \"value\": \"@{activity('StoredProcedure1').output.customOutput.OUTPUT_1}\"\n    },\n    {\n      \"name\": \"AGE\",\n      \"type\": \"NUMBER\",\n      \"value\": @{activity('StoredProcedure1').output.customOutput.OUTPUT_2}\n    }\n  ]\n}",
+                                "value": "{\n  \"databaseName\": \"MyDatabase\",\n  \"schemaName\": \"MySchema\",\n  \"storedProcedureName\": \"MyStoredProcedure\",\n  \"parameters\": [\n    {\n      \"name\": \"FIRST_NAME\",\n      \"type\": \"VARCHAR\",\n      \"value\": \"@{activity('StoredProcedure1').output.OUTPUT_1}\"\n    },\n    {\n      \"name\": \"AGE\",\n      \"type\": \"NUMBER\",\n      \"value\": @{activity('StoredProcedure1').output.OUTPUT_2}\n    }\n  ]\n}",
                                 "type": "Expression"
                             }
                         },
