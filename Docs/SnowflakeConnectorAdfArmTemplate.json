@@ -332,7 +332,7 @@
                     },
                     "AGE": {
                         "type": "int",
-                        "defaultValue": 5
+                        "defaultValue": 10
                     }
                 },
                 "annotations": []

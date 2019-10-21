@@ -17,6 +17,7 @@ _**Note**_: As of September 2019 ADF does not provide a native Snowflake connect
    1. [ADF Expressions](#adf-expressions)
 1. [Prerequisites](#prerequisites)
 1. [Deployment](#deployment)
+1. [Legal](#legal)
 
 ## Connector Overview
 ### High Level Overview
@@ -295,3 +296,10 @@ In order to debug/run the Azure Function locally you need to create a `local.set
 ```
 
 See the [Snowflake Connector for .NET](https://github.com/snowflakedb/snowflake-connector-net) page for important details around the Snowflake account name.
+
+## Legal
+Copyright (c) 2019 Snowflake Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use this connector except in compliance with the License. You may obtain a copy of the License at: [http://www.apache.org/licenses/LICENSE-2.0](http://www.apache.org/licenses/LICENSE-2.0)
+
+Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
