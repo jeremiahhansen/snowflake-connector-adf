@@ -221,7 +221,9 @@ In order to deploy the connector and associate Azure resources you must have the
 1. [.NET Core 2.2](https://dotnet.microsoft.com/download/dotnet-core/2.2) installed on your computer
 1. [Visual Studio Code](https://code.visualstudio.com) installed on your computer with the following Extensions installed
    1. C#
-   1. Azure Functions (see the [Azure Functions Getting Started](https://code.visualstudio.com/tutorials/functions-extension/getting-started) guide for more setup steps)
+   1. Azure Functions
+1. Azure Functions Core Tools installed on your computer (see the [Azure Functions Getting Started](https://code.visualstudio.com/tutorials/functions-extension/getting-started) guide for details)
+1. This entire repository either downloaded (or cloned) to your computer
 
 ## Deployment
 Please complete the steps outlined in the [Prerequisites](#Prerequisites) section first and then do the following:
@@ -241,7 +243,7 @@ Please complete the steps outlined in the [Prerequisites](#Prerequisites) sectio
       1. *Resource Group*: Select the Resource Group you created earlier
       1. *Resource Name Prefix*: Pick a unique prefix which will be appended to all Azure resources created
       1. *Key Vault Owner Object Id*: Paste the Active Directory Object Id you looked up earlier
-      1. *Snowflake Connection String*: Enter the Snowflake connection string to your Snowflake account in the following format: `account=<Snowflake Account Name>;user=<Snowflake User Name>;password=<Snowflake User Password>` (see the [Snowflake Connector for .NET](https://github.com/snowflakedb/snowflake-connector-net) page for more details)
+      1. *Snowflake Connection String*: Enter the Snowflake connection string to your Snowflake account in the following format: `account=<Snowflake Account Name>;host=<Snowflake Fully Qualified Host Name>;user=<Snowflake User Name>;password=<Snowflake User Password>` (see the [Snowflake Connector for .NET](https://github.com/snowflakedb/snowflake-connector-net) page for more details)
       1. Check the "I agree to the terms and conditions stated above" and click "Purchase" (*Note*: this just means that you agree to pay for the Azure resources being created by the ARM template)
    1. Wait for the ARM deployment to complete
 1. Create a Key Vault Access Policy for the Function App
@@ -290,7 +292,7 @@ In order to debug/run the Azure Function locally you need to create a `local.set
         "FUNCTIONS_WORKER_RUNTIME": "dotnet",
         "storageAccountConnectionString": "DefaultEndpointsProtocol=https;AccountName=<Storage Account Name>;AccountKey=<Storage Account Key>;EndpointSuffix=core.windows.net",
         "storageAccountContainerName": "storedprocedures",
-        "snowflakeConnectionString": "account=<Snowflake Account Name>;user=<Snowflake User Name>;password=<Snowflake User Password>"
+        "snowflakeConnectionString": "account=<Snowflake Account Name>;host=<Snowflake Fully Qualified Host Name>;user=<Snowflake User Name>;password=<Snowflake User Password>"
     }
 }
 ```
