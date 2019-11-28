@@ -49,68 +49,85 @@ namespace Snowflake.Connector
             dynamic requestBody = JsonConvert.DeserializeObject(requestBodyString,
                 new JsonSerializerSettings() { DateParseHandling = DateParseHandling.None });
 
-            // Get the required inputs and validate them
-            #region Collect and validate inputs
-            string snowflakeConnectionString = System.Environment.GetEnvironmentVariable("snowflakeConnectionString");
-            if (String.IsNullOrEmpty(snowflakeConnectionString))
+            try
             {
-                throw new Exception("snowflakeConnectionString must be provided");
-            }
-            string storageAccountConnectionString = System.Environment.GetEnvironmentVariable("storageAccountConnectionString");
-            if (String.IsNullOrEmpty(storageAccountConnectionString))
-            {
-                throw new Exception("storageAccountConnectionString must be provided");
-            }
-            string storageAccountContainerName = System.Environment.GetEnvironmentVariable("storageAccountContainerName");
-            if (String.IsNullOrEmpty(storageAccountContainerName))
-            {
-                throw new Exception("storageAccountContainerName must be provided");
-            }
-            string databaseName = Convert.ToString(requestBody.databaseName);
-            if (String.IsNullOrEmpty(databaseName))
-            {
-                throw new Exception("databaseName must be provided");
-            }
-            string schemaName = Convert.ToString(requestBody.schemaName);
-            if (String.IsNullOrEmpty(schemaName))
-            {
-                throw new Exception("schemaName must be provided");
-            }
-            string storedProcedureName = Convert.ToString(requestBody.storedProcedureName);
-            if (String.IsNullOrEmpty(storedProcedureName))
-            {
-                throw new Exception("storedProcedureName must be provided");
-            }
-            #endregion Collect and validate inputs
+                // Get the required inputs and validate them
+                #region Collect and validate inputs
+                string snowflakeConnectionString = System.Environment.GetEnvironmentVariable("snowflakeConnectionString");
+                if (String.IsNullOrEmpty(snowflakeConnectionString))
+                {
+                    throw new Exception("snowflakeConnectionString must be provided");
+                }
+                string storageAccountConnectionString = System.Environment.GetEnvironmentVariable("storageAccountConnectionString");
+                if (String.IsNullOrEmpty(storageAccountConnectionString))
+                {
+                    throw new Exception("storageAccountConnectionString must be provided");
+                }
+                string storageAccountContainerName = System.Environment.GetEnvironmentVariable("storageAccountContainerName");
+                if (String.IsNullOrEmpty(storageAccountContainerName))
+                {
+                    throw new Exception("storageAccountContainerName must be provided");
+                }
+                string databaseName = Convert.ToString(requestBody.databaseName);
+                if (String.IsNullOrEmpty(databaseName))
+                {
+                    throw new Exception("databaseName must be provided");
+                }
+                string schemaName = Convert.ToString(requestBody.schemaName);
+                if (String.IsNullOrEmpty(schemaName))
+                {
+                    throw new Exception("schemaName must be provided");
+                }
+                string storedProcedureName = Convert.ToString(requestBody.storedProcedureName);
+                if (String.IsNullOrEmpty(storedProcedureName))
+                {
+                    throw new Exception("storedProcedureName must be provided");
+                }
+                #endregion Collect and validate inputs
 
-            // Generate the blob file path to the stored procedure
-            string storageAccountBlobFilePath = generateStoredProcedureBlobFilePath(databaseName, schemaName, storedProcedureName);
+                // Generate the blob file path to the stored procedure
+                string storageAccountBlobFilePath = generateStoredProcedureBlobFilePath(databaseName, schemaName, storedProcedureName);
 
-            // Get the SQL text to execute
-            Task<string> blobReadTask = readContentFromBlobAsync(log, storageAccountConnectionString, storageAccountContainerName, storageAccountBlobFilePath);
-            string sqlText = blobReadTask.GetAwaiter().GetResult();
-            sqlText = sqlText.Trim();
-            if (sqlText.Length == 0)
-            {
-                throw new Exception($"Blob script {storageAccountBlobFilePath} is empty");
+                // Get the SQL text to execute
+                Task<string> blobReadTask = readContentFromBlobAsync(log, storageAccountConnectionString, storageAccountContainerName, storageAccountBlobFilePath);
+                string sqlText = blobReadTask.GetAwaiter().GetResult();
+                sqlText = sqlText.Trim();
+                if (sqlText.Length == 0)
+                {
+                    throw new Exception($"Blob script {storageAccountBlobFilePath} is empty");
+                }
+
+                // Split the SQL text into individual queries since we can only run one query at a time against Snowflake
+                string[] sqlCommands = splitSqlCommands(sqlText);
+
+                // Convert any parameters to SQL variables
+                string setVariableCommand = "";
+                if (requestBody.ContainsKey("parameters"))
+                {
+                    setVariableCommand = generateSetVariableCommand(requestBody.parameters);
+                }
+
+                // Run the Snowflake SQL commands
+                var output = runSnowflakeSqlCommands(log, snowflakeConnectionString, setVariableCommand, sqlCommands);
+
+                // Return a 200 OK result to the client with JSON body
+                return new OkObjectResult(output);
             }
-
-            // Split the SQL text into individual queries since we can only run one query at a time against Snowflake
-            string[] sqlCommands = splitSqlCommands(sqlText);
-
-            // Convert any parameters to SQL variables
-            string setVariableCommand = "";
-            if (requestBody.ContainsKey("parameters"))
+            catch (Exception e)
             {
-                setVariableCommand = generateSetVariableCommand(requestBody.parameters);
+                // Create a JSON error object
+                var output = new JObject();
+                output.Add("ClassName", e.GetType().Name);
+                output.Add("Message", e.Message);
+                output.Add("StackTrace", e.StackTrace);
+
+                // Return a 400 bad request result to the client with JSON body
+                return new BadRequestObjectResult(output);
             }
-
-            // Run the Snowflake SQL commands
-            JObject output = runSnowflakeSqlCommands(log, snowflakeConnectionString, setVariableCommand, sqlCommands);
-
-            // Return the result JSON object
-            log.LogInformation($"Completed successfully at: {DateTime.Now.ToString()} (UTC).");
-            return new JsonResult(output);
+            finally
+            {
+                log.LogInformation($"Completed at: {DateTime.Now.ToString()} (UTC).");
+            }
         }
 
         /// <summary>
