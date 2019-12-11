@@ -18,7 +18,9 @@
         "appServicePlanName": "[concat(parameters('resourceNamePrefix'), 'asp')]",
         "functionAppName": "[concat(parameters('resourceNamePrefix'), 'fa')]",
         "dataFactoryName": "[concat(parameters('resourceNamePrefix'), 'adf')]",
-        "storageAccountContainerName": "storedprocedures"
+        "dataFactoryId": "[concat('Microsoft.DataFactory/factories/', variables('dataFactoryName'))]",
+        "storageAccountContainerNameSprocs": "storedprocedures",
+        "storageAccountContainerNameStage": "blobstage"
     },
     "resources": [
         {
@@ -40,7 +42,8 @@
                             "keys": [],
                             "secrets": [
                                 "Get",
-                                "List"
+                                "List",
+                                "Set"
                             ],
                             "certificates": []
                         }
@@ -98,7 +101,18 @@
         {
             "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
             "apiVersion": "2019-04-01",
-            "name": "[concat(variables('storageAccountName'), '/default/', variables('storageAccountContainerName'))]",
+            "name": "[concat(variables('storageAccountName'), '/default/', variables('storageAccountContainerNameSprocs'))]",
+            "properties": {
+                "publicAccess": "None"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+            ]
+        },
+        {
+            "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+            "apiVersion": "2019-04-01",
+            "name": "[concat(variables('storageAccountName'), '/default/', variables('storageAccountContainerNameStage'))]",
             "properties": {
                 "publicAccess": "None"
             },
@@ -172,7 +186,7 @@
                         },
                         {
                             "name": "storageAccountContainerName",
-                            "value": "[variables('storageAccountContainerName')]"
+                            "value": "[variables('storageAccountContainerNameSprocs')]"
                         },
                         {
                             "name": "snowflakeConnectionString",
@@ -256,7 +270,102 @@
                 }
             },
             "dependsOn": [
-                "[concat('Microsoft.DataFactory/factories/', variables('dataFactoryName'), '/linkedServices/KeyVault_LS')]"
+                "[concat(variables('dataFactoryId'), '/linkedServices/KeyVault_LS')]"
+            ]
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "name": "[concat(variables('dataFactoryName'), '/BlobStage_LS')]",
+            "properties": {
+                "annotations": [],
+                "type": "AzureBlobStorage",
+                "typeProperties": {
+                    "connectionString": {
+                        "type": "AzureKeyVaultSecret",
+                        "store": {
+                            "referenceName": "KeyVault_LS",
+                            "type": "LinkedServiceReference"
+                        },
+                        "secretName": "storageAccountConnectionString"
+                    }
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('dataFactoryId'), '/linkedServices/KeyVault_LS')]"
+            ]
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/linkedServices",
+            "apiVersion": "2018-06-01",
+            "name": "[concat(variables('dataFactoryName'), '/TripPin_LS')]",
+            "properties": {
+                "annotations": [],
+                "type": "OData",
+                "typeProperties": {
+                    "url": "https://services.odata.org/TripPinRESTierService",
+                    "authenticationType": "Anonymous"
+                }
+            },
+            "dependsOn": [
+                "[variables('dataFactoryName')]"
+            ]
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "name": "[concat(variables('dataFactoryName'), '/DelimitedText_DS')]",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "BlobStage_LS",
+                    "type": "LinkedServiceReference"
+                },
+                "parameters": {
+                    "fileName": {
+                        "type": "string"
+                    }
+                },
+                "annotations": [],
+                "type": "DelimitedText",
+                "typeProperties": {
+                    "location": {
+                        "type": "AzureBlobStorageLocation",
+                        "fileName": {
+                            "value": "@dataset().fileName",
+                            "type": "Expression"
+                        },
+                        "container": "[variables('storageAccountContainerNameStage')]"
+                    },
+                    "columnDelimiter": ",",
+                    "rowDelimiter": "\n",
+                    "escapeChar": "\\",
+                    "firstRowAsHeader": true,
+                    "quoteChar": "\""
+                },
+                "schema": []
+            },
+            "dependsOn": [
+                "[concat(variables('dataFactoryId'), '/linkedServices/BlobStage_LS')]"
+            ]
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/datasets",
+            "apiVersion": "2018-06-01",
+            "name": "[concat(variables('dataFactoryName'), '/TripPin_DS')]",
+            "properties": {
+                "linkedServiceName": {
+                    "referenceName": "TripPin_LS",
+                    "type": "LinkedServiceReference"
+                },
+                "annotations": [],
+                "type": "ODataResource",
+                "schema": [],
+                "typeProperties": {
+                    "path": "People"
+                }
+            },
+            "dependsOn": [
+                "[concat(variables('dataFactoryId'), '/linkedServices/TripPin_LS')]"
             ]
         },
         {
@@ -338,7 +447,242 @@
                 "annotations": []
             },
             "dependsOn": [
-                "[concat('Microsoft.DataFactory/factories/', variables('dataFactoryName'), '/linkedServices/FunctionApp_LS')]"
+                "[concat(variables('dataFactoryId'), '/linkedServices/FunctionApp_LS')]"
+            ]
+        },
+        {
+            "type": "Microsoft.DataFactory/factories/pipelines",
+            "apiVersion": "2018-06-01",
+            "name": "[concat(variables('dataFactoryName'), '/DataIngestion_P')]",
+            "properties": {
+                "activities": [
+                    {
+                        "name": "StartPipelineExecutionLog_AF",
+                        "type": "AzureFunctionActivity",
+                        "dependsOn": [],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "functionName": "SnowflakeConnectorAdf",
+                            "method": "POST",
+                            "headers": {},
+                            "body": {
+                                "value": "{\n    \"databaseName\": \"@{pipeline().parameters.databaseName}\",\n    \"schemaName\": \"LOGS\",\n    \"storedProcedureName\": \"SP_START_PIPELINE_EXECUTION\",\n    \"parameters\": [\n      {\n        \"name\": \"ADF_PIPELINE_RUN_ID\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().RunId}\"\n      },\n      {\n        \"name\": \"ADF_PIPELINE_NAME\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().Pipeline}\"\n      },\n      {\n        \"name\": \"ADF_PIPELINE_TRIGGER_ID\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().TriggerId}\"\n      },\n      {\n        \"name\": \"ADF_PIPELINE_TRIGGER_NAME\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().TriggerName}\"\n      },\n      {\n        \"name\": \"ADF_PIPELINE_TRIGGER_TYPE\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().TriggerType}\"\n      },\n      {\n        \"name\": \"ADF_PIPELINE_TRIGGER_TIME\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().TriggerTime}\"\n      },\n      {\n        \"name\": \"ADF_DATA_FACTORY_NAME\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().DataFactory}\"\n      }\n    ]\n}",
+                                "type": "Expression"
+                            }
+                        },
+                        "linkedServiceName": {
+                            "referenceName": "FunctionApp_LS",
+                            "type": "LinkedServiceReference"
+                        }
+                    },
+                    {
+                        "name": "SetFileName_SV",
+                        "type": "SetVariable",
+                        "dependsOn": [
+                            {
+                                "activity": "StartPipelineExecutionLog_AF",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "userProperties": [],
+                        "typeProperties": {
+                            "variableName": "fileName",
+                            "value": {
+                                "value": "@concat(pipeline().parameters.tableName, '_', formatDateTime(pipeline().TriggerTime,'yyyyMMddHHmmss'), '.txt')",
+                                "type": "Expression"
+                            }
+                        }
+                    },
+                    {
+                        "name": "CopySourceToBlob_CD",
+                        "type": "Copy",
+                        "dependsOn": [
+                            {
+                                "activity": "SetFileName_SV",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "source": {
+                                "type": "ODataSource"
+                            },
+                            "sink": {
+                                "type": "DelimitedTextSink",
+                                "storeSettings": {
+                                    "type": "AzureBlobStorageWriteSettings"
+                                },
+                                "formatSettings": {
+                                    "type": "DelimitedTextWriteSettings",
+                                    "quoteAllText": true,
+                                    "fileExtension": ".txt"
+                                }
+                            },
+                            "enableStaging": false
+                        },
+                        "inputs": [
+                            {
+                                "referenceName": "TripPin_DS",
+                                "type": "DatasetReference",
+                                "parameters": {}
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "referenceName": "DelimitedText_DS",
+                                "type": "DatasetReference",
+                                "parameters": {
+                                    "fileName": {
+                                        "value": "@variables('fileName')",
+                                        "type": "Expression"
+                                    }
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        "name": "CopyBlobToStage_AF",
+                        "type": "AzureFunctionActivity",
+                        "dependsOn": [
+                            {
+                                "activity": "CopySourceToBlob_CD",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "functionName": "SnowflakeConnectorAdf",
+                            "method": "POST",
+                            "headers": {},
+                            "body": {
+                                "value": "{\n  \"databaseName\": \"@{pipeline().parameters.databaseName}\",\n  \"schemaName\": \"@{pipeline().parameters.schemaName}\",\n  \"storedProcedureName\": \"SP_LOAD_@{pipeline().parameters.tableName}_STAGE\",\n  \"parameters\": [\n    {\n      \"name\": \"FILE_NAME\",\n      \"type\": \"VARCHAR\",\n      \"value\": \"@{variables('fileName')}\"\n    }\n  ]\n}",
+                                "type": "Expression"
+                            }
+                        },
+                        "linkedServiceName": {
+                            "referenceName": "FunctionApp_LS",
+                            "type": "LinkedServiceReference"
+                        }
+                    },
+                    {
+                        "name": "MergeStageToTarget_AF",
+                        "type": "AzureFunctionActivity",
+                        "dependsOn": [
+                            {
+                                "activity": "CopyBlobToStage_AF",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "functionName": "SnowflakeConnectorAdf",
+                            "method": "POST",
+                            "headers": {},
+                            "body": {
+                                "value": "{\n  \"databaseName\": \"@{pipeline().parameters.databaseName}\",\n  \"schemaName\": \"@{pipeline().parameters.schemaName}\",\n  \"storedProcedureName\": \"SP_MERGE_@{pipeline().parameters.tableName}\",\n  \"parameters\": [\n    {\n      \"name\": \"PIPELINE_RUN_ID\",\n      \"type\": \"VARCHAR\",\n      \"value\": \"@{pipeline().RunId}\"\n    }\n  ]\n}",
+                                "type": "Expression"
+                            }
+                        },
+                        "linkedServiceName": {
+                            "referenceName": "FunctionApp_LS",
+                            "type": "LinkedServiceReference"
+                        }
+                    },
+                    {
+                        "name": "EndPipelineExecutionLog_AF",
+                        "type": "AzureFunctionActivity",
+                        "dependsOn": [
+                            {
+                                "activity": "MergeStageToTarget_AF",
+                                "dependencyConditions": [
+                                    "Succeeded"
+                                ]
+                            }
+                        ],
+                        "policy": {
+                            "timeout": "7.00:00:00",
+                            "retry": 0,
+                            "retryIntervalInSeconds": 30,
+                            "secureOutput": false,
+                            "secureInput": false
+                        },
+                        "userProperties": [],
+                        "typeProperties": {
+                            "functionName": "SnowflakeConnectorAdf",
+                            "method": "POST",
+                            "headers": {},
+                            "body": {
+                                "value": "{\n    \"databaseName\": \"@{pipeline().parameters.databaseName}\",\n    \"schemaName\": \"LOGS\",\n    \"storedProcedureName\": \"SP_END_PIPELINE_EXECUTION\",\n    \"parameters\": [\n      {\n        \"name\": \"ADF_PIPELINE_RUN_ID\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().RunId}\"\n      },\n      {\n        \"name\": \"ROWS_LOADED\",\n        \"type\": \"NUMBER\",\n        \"value\": \"@{activity('CopyBlobToStage_AF').output.ROWS_LOADED}\"\n      },\n      {\n        \"name\": \"ROWS_INSERTED\",\n        \"type\": \"NUMBER\",\n        \"value\": \"@{activity('MergeStageToTarget_AF').output.ROWS_INSERTED}\"\n      },\n      {\n        \"name\": \"ROWS_UPDATED\",\n        \"type\": \"NUMBER\",\n        \"value\": \"@{activity('MergeStageToTarget_AF').output.ROWS_UPDATED}\"\n      },\n      {\n        \"name\": \"ROWS_DELETED\",\n        \"type\": \"NUMBER\",\n        \"value\": 0\n      }\n    ]\n}",
+                                "type": "Expression"
+                            }
+                        },
+                        "linkedServiceName": {
+                            "referenceName": "FunctionApp_LS",
+                            "type": "LinkedServiceReference"
+                        }
+                    }
+                ],
+                "parameters": {
+                    "databaseName": {
+                        "type": "string",
+                        "defaultValue": "ADF_DEMO"
+                    },
+                    "schemaName": {
+                        "type": "string",
+                        "defaultValue": "TRIPPIN"
+                    },
+                    "tableName": {
+                        "type": "string",
+                        "defaultValue": "PEOPLE"
+                    }
+                },
+                "variables": {
+                    "fileName": {
+                        "type": "String"
+                    }
+                },
+                "annotations": []
+            },
+            "dependsOn": [
+                "[concat(variables('dataFactoryId'), '/datasets/TripPin_DS')]",
+                "[concat(variables('dataFactoryId'), '/datasets/DelimitedText_DS')]",
+                "[concat(variables('dataFactoryId'), '/linkedServices/FunctionApp_LS')]"
             ]
         }
     ]

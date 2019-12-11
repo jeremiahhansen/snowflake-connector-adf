@@ -3,7 +3,7 @@ This connector is an Azure Function which allows Azure Data Factory (ADF) to con
 
 To get started please follow the steps outlined in the [Prerequisites](#Prerequisites) and [Deployment](#deployment) sections below.
 
-_**Note**_: As of September 2019 ADF does not provide a native Snowflake connector and Snowflake does not provide native SQL-based stored procedures. The goal of this connector is to enable SQL-based stored procedures against Snowflake from ADF so that when both native connectors are available the migration will be as painless as possible.
+_**Note**_: As of November 2019 ADF does not provide a native Snowflake connector and Snowflake does not provide native SQL-based stored procedures. The goal of this connector is to enable SQL-based stored procedures against Snowflake from ADF so that when both native connectors are available the migration will be as painless as possible.
 
 ## Table of Contents
 1. [Connector Overview](#connector-overview)
@@ -158,11 +158,11 @@ The connector expects all three parameters to be supplied via the JSON `POST` bo
 }
 ```
 
-The connector builds a blob storage path based off of those values and reads in the corresponding script file. In this case the full path is `/MyDatabase/MySchema/MyStoredProcedure.sql`. You can find the sample [MyStoredProcedure.sql](/Docs/MyStoredProcedure.sql) script in the `/Docs` folder of this repo.
+The connector builds a blob storage path based off of those values and reads in the corresponding script file. In this case the full path is `/MyDatabase/MySchema/MyStoredProcedure.sql`. You can find the sample [MyStoredProcedure.sql](/Docs/SampleStoredProcedures/MyDatabase/MySchema/MyStoredProcedure.sql) script in the `/Docs` folder of this repo.
 
 ## Integration with ADF
 ### ADF Overview
-This project comes with a sample ADF pipeline which demonstrates how to use this connector within ADF. The sample ADF resources are deployed during the [Deployment](#deployment) section below and are contained in the [SnowflakeConnectorAdfArmTemplate.json](/Docs/SnowflakeConnectorAdfArmTemplate.json) script in the `/Docs` folder of this repo. Here is a screenshot showing one activity within the sample ADF pipeline:
+This project comes with a few sample ADF pipelines which demonstrates how to use this connector within ADF. The sample ADF resources are deployed during the [Deployment](#deployment) section below and are contained in the [SnowflakeConnectorAdfArmTemplate.json](/Docs/SnowflakeConnectorAdfArmTemplate.json) script in the `/Docs` folder of this repo. Here is a screenshot showing one of the sample pipelines:
 
 ![ADF Pipeline Overview](/Docs/Screenshots/adf-pipeline-overview.png?raw=true "ADF Pipeline Overview")
 
@@ -216,36 +216,53 @@ And in order to access return values from an ADF activity we make use of the `ac
 ## Prerequisites
 In order to deploy the connector and associate Azure resources you must have the following:
 
-1. A Snowflake account and Snowflake user with password
+1. A Snowflake account and Snowflake user with ACCOUNTADMIN role access
 1. An Azure Subscription with at least Contributor access to a resource group
 1. [.NET Core 2.2](https://dotnet.microsoft.com/download/dotnet-core/2.2) installed on your computer
 1. [Visual Studio Code](https://code.visualstudio.com) installed on your computer with the following Extensions installed
    1. C#
    1. Azure Functions
 1. Azure Functions Core Tools installed on your computer (see the [Azure Functions Getting Started](https://code.visualstudio.com/tutorials/functions-extension/getting-started) guide for details)
+1. [Azure Storage Explorer](https://azure.microsoft.com/en-us/features/storage-explorer/) installed on your computer
 1. This entire repository either downloaded (or cloned) to your computer
 
 ## Deployment
 Please complete the steps outlined in the [Prerequisites](#Prerequisites) section first and then do the following:
 
+1. Login to the [Azure Portal](https://portal.azure.com)
 1. Create an Azure Resource Group to contain the required Azure resources (we'll be creating 5 resources total)
 1. Lookup your Azure Active Directory Object Id
-   1. Login to the [Azure Portal](https://portal.azure.com)
    1. Open the Azure Active Directory (AAD) pane by clicking on the "Azure Active Directory" link in the left navbar or by searching for "Azure Active Directory" in the top search bar
    1. Click on the "Users" link in the AAD left navbar
    1. Search the list of users by using your name or email then open your user account
    1. Copy the "Object ID" and save it for later
 1. Deploy the Azure Resource Manager (ARM) template for the solution
-   1. Login to the [Azure Portal](https://portal.azure.com) (if you aren't already)
    1. Search for and open the "Deploy a custom template" service in the top search bar
    1. Click on "Build your own template in the editor" and then copy and paste the entire contents of the `\Docs\SnowflakeConnectorAdfArmTemplate.json` file in this repo and click "Save"
    1. On the "Custom deployment" update the following fields
       1. *Resource Group*: Select the Resource Group you created earlier
       1. *Resource Name Prefix*: Pick a unique prefix which will be appended to all Azure resources created
       1. *Key Vault Owner Object Id*: Paste the Active Directory Object Id you looked up earlier
-      1. *Snowflake Connection String*: Enter the Snowflake connection string to your Snowflake account in the following format: `account=<Snowflake Account Name>;host=<Snowflake Fully Qualified Host Name>;user=<Snowflake User Name>;password=<Snowflake User Password>` (see the [Snowflake Connector for .NET](https://github.com/snowflakedb/snowflake-connector-net) page for more details)
+      1. *Snowflake Connection String*: Enter the Snowflake connection string to your Snowflake account in the following format: `account=<Snowflake Account Name>;host=<Snowflake Fully Qualified Host Name>;user=ADF_DEMO_USER;password=<Snowflake User Password>` (see the [Snowflake Connector for .NET](https://github.com/snowflakedb/snowflake-connector-net) page for more details, and remember the password you pick here because you'll use it again when creating the Snowflake objects)
       1. Check the "I agree to the terms and conditions stated above" and click "Purchase" (*Note*: this just means that you agree to pay for the Azure resources being created by the ARM template)
    1. Wait for the ARM deployment to complete
+1. Create a Shared Access Signature (SAS) for the Snowflake STAGE object
+   1. Open the Storage Account resource that was created for the connector
+   1. Click on "Shared access signature" in the left nav bar
+   1. Update the SAS access policy details as appropriate. Here is a suggested setup for the sample pipeline:
+      1. For "Allowed services" make sure only "Blob" is selected
+      1. For "Allowed resource types" make sure only "Container" and "Object" are selected
+      1. For "Allowed permissions" you'll only need "Read" and "List" to load data
+      1. For the "End" time pick a date in the future, maybe a month out (depending)
+      1. For "Allowed protocols" make sure that "HTTPS only" is selected
+   1. Click on "Generate SAS and connection string"
+   1. Copy the "SAS token" and save for the later
+   1. Please note that once you leave this page you can't get this value again, so save it now.
+1. Deploy the required Snowflake objects for the sample pipelines
+   1. Login to your Snowflake account with a user that has ACCOUNTADMIN role access
+   1. Open the `\Docs\SnowflakeDbSetup.sql` script in Snowflake, or copy and paste the contents to a blank Worksheet in Snowflake
+   1. Follow the steps in the "Script setup" section to update a few values in the script
+   1. Run all queries in the Worksheet
 1. Create a Key Vault Access Policy for the Function App
    1. Open the Key Vault resource that was created
    1. Click on "Access policies" in the Key Vault left nav bar
@@ -266,11 +283,14 @@ Please complete the steps outlined in the [Prerequisites](#Prerequisites) sectio
    1. Click "Save" (**important**)
 1. Update the `storageAccountConnectionString` Function App setting with Key Vault secret version number (**note**: this is a temporary workaround until Azure Key Vault integration with Azure Functions is GA)
    1. Follow the steps above except this time use the "storageAccountConnectionString" secret
-1. Upload the stored procedure scripts to the new storage account
-   1. Connect to the new storage account either through the [Azure Portal UI](https://portal.azure.com) or the [Azure Storage Explorer](https://azure.microsoft.com/en-us/features/storage-explorer/)
-   1. Create the following folder structure in the "storedprocedures" container: `MyDatabase\MySchema`
-   1. Upload the `\Docs\MyStoredProcedure.sql` file in this repo to that new folder
-1. Deploy the Azure Function code to the new Function App
+1. Upload the sample stored procedure scripts to the new connector storage account
+   1. Open Azure Storage Explorer and find your new connector storage account
+   1. Open the "storedprocedures" blob container
+   1. Click on "Upload" and then "Upload Folder..."
+   1. Select the "ADF_DEMO" folder from the `\Docs\SampleStoredProcedures` folder and click "Upload"
+   1. Select the "MyDatabase" folder from the `\Docs\SampleStoredProcedures` folder and click "Upload"
+   1. Note: You can also upload these files via the [Azure Portal UI](https://portal.azure.com) but you'll need to manually create the appropriate folder structure and upload each file individually
+1. Deploy the Azure Function code to the new Function App (from **Visual Studio Code**)
    1. Open the solution in Visual Studio Code (VS Code)
    1. Click on the "Azure" icon in the left nav bar
    1. Click on the "Deploy to Function App..." (up arrow) icon in the Azure Function pane
@@ -279,8 +299,9 @@ Please complete the steps outlined in the [Prerequisites](#Prerequisites) sectio
    1. Open the Azure Data Factory resource that was created
    1. Click on the "Author & Monitor" icon
    1. Click on the "Author" (pencil) icon in the left navbar
-   1. Click on the "SampleSnowflakePipeline_P" pipeline in the Factory Resources section
+   1. Click on the `SampleSnowflakePipeline_P` pipeline in the Factory Resources section
    1. Click on the "Debug" link and then "Finish" to execute the pipeline
+   1. Do the same to execute the `DataIngestion_P` pipeline
 
 In order to debug/run the Azure Function locally you need to create a `local.settings.json` file and add the three environment variables expected by the function. Here is a template for the contents of the file (you'll need to replace all <> placeholders with real values for your environment):
 
@@ -292,7 +313,7 @@ In order to debug/run the Azure Function locally you need to create a `local.set
         "FUNCTIONS_WORKER_RUNTIME": "dotnet",
         "storageAccountConnectionString": "DefaultEndpointsProtocol=https;AccountName=<Storage Account Name>;AccountKey=<Storage Account Key>;EndpointSuffix=core.windows.net",
         "storageAccountContainerName": "storedprocedures",
-        "snowflakeConnectionString": "account=<Snowflake Account Name>;host=<Snowflake Fully Qualified Host Name>;user=<Snowflake User Name>;password=<Snowflake User Password>"
+        "snowflakeConnectionString": "account=<Snowflake Account Name>;host=<Snowflake Fully Qualified Host Name>;user=ADF_DEMO_USER;password=<Snowflake User Password>"
     }
 }
 ```

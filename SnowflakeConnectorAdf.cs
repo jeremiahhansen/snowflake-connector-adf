@@ -35,7 +35,7 @@ namespace Snowflake.Connector
         private static string _validParameterNameRegex = @"^[A-Za-z_]{1}[A-Za-z0-9_-]*$";
         // This is pretty restrictive
         private static string _validParameterTypeRegex = @"^VARCHAR|NUMBER$";
-        private static string _validParameterValueRegex = @"^[A-Za-z0-9./\\ _-]+$";
+        private static string _validParameterValueRegex = @"^[A-Za-z0-9./\\ :_-]+$";
 
         [FunctionName("SnowflakeConnectorAdf")]
         public static async Task<IActionResult> Run(
