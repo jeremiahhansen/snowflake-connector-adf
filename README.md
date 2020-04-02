@@ -218,7 +218,7 @@ In order to deploy the connector and associate Azure resources you must have the
 
 1. A Snowflake account and Snowflake user with ACCOUNTADMIN role access
 1. An Azure Subscription with at least Contributor access to a resource group
-1. [.NET Core 2.2](https://dotnet.microsoft.com/download/dotnet-core/2.2) installed on your computer
+1. [.NET Core 3.1](https://dotnet.microsoft.com/download/dotnet-core/3.1) installed on your computer (choose the newest version)
 1. [Visual Studio Code](https://code.visualstudio.com) installed on your computer with the following Extensions installed
    1. C#
    1. Azure Functions
