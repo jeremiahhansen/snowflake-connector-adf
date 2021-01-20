@@ -3,7 +3,9 @@ This connector is an Azure Function which allows Azure Data Factory (ADF) to con
 
 To get started please follow the steps outlined in the [Prerequisites](#Prerequisites) and [Deployment](#deployment) sections below.
 
-_**Note**_: As of November 2019 ADF does not provide a native Snowflake connector and Snowflake does not provide native SQL-based stored procedures. The goal of this connector is to enable SQL-based stored procedures against Snowflake from ADF so that when both native connectors are available the migration will be as painless as possible.
+As of January 2021 ADF does now provide a native Snowflake connector. But it is still not possible to run an arbitrary SQL query (let alone call a stored procedure) against Snowflake. When that functionality is available much of this connector will be obsolete.
+
+_**CAUTION**_: This connector is limited to a maximum runtime of 230 seconds for each script executed. This limitation is not a result of this specific function's code, but rather of any HTTP triggered Azure Function (which is ultimately due to the default idle timeout of Azure Load Balancer). See [Function app timeout duration](https://docs.microsoft.com/en-us/azure/azure-functions/functions-scale#timeout) for more details. If you need to run a query against Snowflake that takes more than 230 seconds you need to consider a different option. Microsoft recommends following [the Durable Functions async pattern](https://docs.microsoft.com/en-us/azure/azure-functions/durable/durable-functions-overview#async-http) to get around this limitation. Fortunately, [dg-hub](https://github.com/dg-hub) has forked this project and updated it to make use of the durable functions async pattern. Please check out the [snowflake-durable-connector-adf project](https://github.com/dg-hub/snowflake-durable-connector-adf) for the details.
 
 ## Table of Contents
 1. [Connector Overview](#connector-overview)
